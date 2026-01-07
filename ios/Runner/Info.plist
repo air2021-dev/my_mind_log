@@ -29,6 +29,10 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>음성으로 마음을 기록하기 위해 음성 인식이 필요해요.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>음성 입력을 위해 마이크 접근이 필요해요.</string>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
