@@ -4,6 +4,10 @@ import 'package:uuid/uuid.dart';
 import '../data/entry.dart';
 import 'entries_list_screen.dart';
 
+import 'package:permission_handler/permission_handler.dart';
+import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+
 final _uuid = Uuid();
 
 class HomeScreen extends StatefulWidget {
@@ -17,8 +21,42 @@ class _HomeScreenState extends State<HomeScreen> {
   final _controller = TextEditingController();
   int? _mood; // 1 ~ 5 (optional)
 
+  final SpeechToText _stt = SpeechToText();
+  bool _speechReady = false;
+  bool _isListening = false;
+
+  String _voiceBaseText = '';
+  TextSelection _voiceBaseSelection = const TextSelection.collapsed(offset: 0);
+
+  @override
+  void initState(){
+    super.initState();
+    _initSpeech();
+  }
+
+  Future<void> _initSpeech() async {
+    _speechReady = await _stt.initialize(
+      onStatus: (status) {
+        // status: listening, notListening, done 등
+        if(status == 'notListening' || status == 'done'){
+          setState(()=> _isListening = false);
+        }
+      },
+      onError: (err) {
+        setState(() => _isListening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('음성 인식 오류: ${err.errorMsg}')),
+        );
+      },
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   void dispose(){
+    _stt.stop();
     _controller.dispose();
     super.dispose();
   }
@@ -52,6 +90,63 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(()=> _mood = null);
   }
 
+  Future<void> _toggleListening() async {
+    if (!_speechReady){
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이 기기에서 음성 인식을 사용할 수 없어요.')),
+      );
+      return;
+    }
+
+    if(_isListening) {
+      await _stt.stop();
+      setState(()=> _isListening = false);
+      return;
+    }
+
+    // 마이크 권한 요청
+    final mic = await Permission.microphone.request();
+    if(!mic.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('마이크 권한이 필요해요.')),
+      );
+      return;
+    }
+
+    // 음성 입력 시작 시점의 텍스트/커서 위치를 베이스로 저장
+    _voiceBaseText = _controller.text;
+    _voiceBaseSelection = _controller.selection;
+
+    setState(()=> _isListening = true);
+    await _stt.listen(
+      onResult: _onSpeechResult,
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 3),
+      listenOptions: SpeechListenOptions(
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+        cancelOnError: true,
+        onDevice: true,
+        autoPunctuation: true,
+        enableHapticFeedback: true,
+      )
+    );
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    final words = result.recognizedWords.trim();
+    final base = _voiceBaseText;
+
+    // 베이스 텍스트가 비어있지 않으면 ㅎ나 칸 띄워서 자연스럽게 붙이기
+    final needsSpace = base.isNotEmpty && !base.endsWith(RegExp(r'\s').toString());
+    final combined = words.isEmpty ? base : (needsSpace ? '$base $words' : '$base$words');
+
+    _controller.value = TextEditingValue(
+      text: combined,
+      selection: TextSelection.collapsed(offset: combined.length),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canSave = _controller.text.trim().isNotEmpty;
@@ -70,13 +165,9 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.list_alt_rounded),
           ),
           IconButton(
-            tooltip: '음성 입력 (다음 단계)',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('음성 입력은 다음 단계에서 연결해요.')),
-              );
-            },
-            icon: const Icon(Icons.mic_none_rounded)
+            tooltip: _isListening ? '음성 입력 중지' : '음성 입력',
+            onPressed: _toggleListening,
+            icon: Icon( _isListening ? Icons.mic : Icons.mic_none_rounded)
           ),
         ],
       ),
