@@ -1,4 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
+import '../data/entry.dart';
+import 'entries_list_screen.dart';
+
+final _uuid = Uuid();
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,19 +23,33 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _onTapSave() {
-    // MVP  1단계: 아직 저장소 없음 -> 다음 단계에서 로컬DB 붙일 때 연결
-    // 지금은 UX 흐름만 확인
+  Future<void> _onTapSave() async{
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('오늘의 기록이 임시로 저장되었어요(다음 단계에서 DB 연결).')),
+    final box = Hive.box<Entry>('entries');
+    final now = DateTime.now();
+
+    // date는 "오늘"의 의미만 남기기 위해 시/분/초 제거
+    final today = DateTime(now.year, now.month, now.day);
+
+    final entry = Entry(
+      id: _uuid.v4(),
+      date: today,
+      text: text,
+      mood: _mood,
+      createdAt: now,
     );
 
-    // 입력 초기화(취향)
-    // _controller.clear();
-    // setState(()=> _mood = null);
+    await box.put(entry.id, entry);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('조용히 남겨두었어요.')),
+    );
+
+    _controller.clear();
+    setState(()=> _mood = null);
   }
 
   @override
@@ -40,6 +60,15 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('오늘의 마음'),
         actions: [
+          IconButton(
+            tooltip: '기록 목록',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EntriesListScreen()),
+              );
+            },
+            icon: const Icon(Icons.list_alt_rounded),
+          ),
           IconButton(
             tooltip: '음성 입력 (다음 단계)',
             onPressed: () {
