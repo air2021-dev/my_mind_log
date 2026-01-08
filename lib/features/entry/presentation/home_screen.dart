@@ -187,7 +187,15 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: _isListening ? '음성 입력 중지' : '음성 입력',
             onPressed: _toggleListening,
-            icon: Icon( _isListening ? Icons.mic : Icons.mic_none_rounded)
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Icon( 
+                _isListening 
+                  ? Icons.mic 
+                  : Icons.mic_none_rounded,
+                key: ValueKey(_isListening),
+              ),
+            )
           ),
         ],
       ),
