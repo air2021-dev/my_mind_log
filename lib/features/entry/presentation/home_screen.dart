@@ -28,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String _voiceBaseText = '';
   TextSelection _voiceBaseSelection = const TextSelection.collapsed(offset: 0);
 
+  DateTime? _listeningStartTime;
+
   @override
   void initState(){
     super.initState();
@@ -100,7 +102,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if(_isListening) {
       await _stt.stop();
-      setState(()=> _isListening = false);
+      if(mounted){
+        setState(()=> _isListening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('여기까지 조용히 받아 적었어요.')),
+        );
+      }
       return;
     }
 
@@ -117,11 +124,19 @@ class _HomeScreenState extends State<HomeScreen> {
     _voiceBaseText = _controller.text;
     _voiceBaseSelection = _controller.selection;
 
-    setState(()=> _isListening = true);
+    _listeningStartTime = DateTime.now();
+
+    if(mounted){
+      setState(()=> _isListening = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('말해보세요. 천천히 들어볼게요.')),
+      );
+    }
+
     await _stt.listen(
       onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 3),
+      listenFor: const Duration(seconds: 45),
+      pauseFor: const Duration(seconds: 2),
       listenOptions: SpeechListenOptions(
         listenMode: ListenMode.dictation,
         partialResults: true,
@@ -139,12 +154,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // 베이스 텍스트가 비어있지 않으면 ㅎ나 칸 띄워서 자연스럽게 붙이기
     final needsSpace = base.isNotEmpty && !base.endsWith(RegExp(r'\s').toString());
+    
     final combined = words.isEmpty ? base : (needsSpace ? '$base $words' : '$base$words');
 
     _controller.value = TextEditingValue(
       text: combined,
       selection: TextSelection.collapsed(offset: combined.length),
     );
+
+    if (result.finalResult) {
+      _voiceBaseText = combined;
+    }
   }
 
   @override
@@ -200,6 +220,15 @@ class _HomeScreenState extends State<HomeScreen> {
               onChanged: (_) => setState((){}),
             ),
             const SizedBox(height: 16),
+
+            if (_isListening) ...[
+              const SizedBox(height:12),
+              _ListeningBanner(
+                startedAt: _listeningStartTime,
+                onStop: _toggleListening,
+              ),
+              const SizedBox(height: 12),
+            ],
 
             ElevatedButton.icon(
               onPressed: canSave ? _onTapSave: null,
@@ -294,3 +323,54 @@ class _MoodRow extends StatelessWidget {
     );
   }
 }
+
+class _ListeningBanner extends StatelessWidget {
+  final DateTime? startedAt;
+  final VoidCallback onStop;
+
+  const _ListeningBanner({
+    required this.startedAt,
+    required this.onStop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = startedAt == null ? null : DateTime.now().difference(startedAt!).inSeconds;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha((255 * 0.35).toInt())),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(Icons.hearing_rounded),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('듣고 있어요.', style: const TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text('편하게 말해도 괜찮아요.\n잠시 멈추면 자연스럽게 마무리돼요.'),
+                if(seconds != null) ...[
+                  const SizedBox(height: 8),
+                  Text('지금까지 ${seconds}s', style: TextStyle(color: Theme.of(context).hintColor)),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: onStop,
+            child: const Text('멈추기'),
+          )
+        ],
+      ),
+    );
+  }
+}
+
