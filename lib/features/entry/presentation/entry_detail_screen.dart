@@ -17,7 +17,38 @@ class EntryDetailScreen extends StatelessWidget {
     final entry = box.get(entryId);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('기록')),
+      appBar: AppBar(
+        title: const Text('기록'),
+        actions: [
+          IconButton(
+            tooltip: '삭제',
+            icon: const Icon(Icons.delete_outline_rounded),
+            onPressed: () async {
+              final ok = await showDialog<bool>( 
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('지울까요?'),
+                  content: const Text('이 기록은 바로 사라져요.\n괜찮다면 지워둘게요.'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('아니요.')),
+                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('지울게요.')),
+                  ],
+                ),
+              );
+
+              if(ok != true) return;              
+              final box = Hive.box<Entry>('entries');
+              await box.delete(entryId);
+
+              if(!context.mounted) return;
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("조용히 지워두었어요.")),
+              );
+            },
+          ),
+        ],
+      ),
       body: entry == null
         ? const Center(child: Text('기록을 찾을 수 없어요.'))
         : SafeArea(
