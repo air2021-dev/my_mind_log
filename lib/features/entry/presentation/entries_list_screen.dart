@@ -38,36 +38,86 @@ class EntriesListScreen extends StatelessWidget {
                 ? '%${preview.substring(0, 60)}...'
                 : preview;
 
-              return InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => EntryDetailScreen(entryId: e.id),
+              return Dismissible(
+                key: ValueKey(e.id),
+                direction: DismissDirection.endToStart,
+                confirmDismiss: (_) async {
+                  final ok = await showDialog<bool>(
+                    context:context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('지울까요?'),
+                      content: const Text('이 기록은 휴지통 없이 바로 사라져요.\n괜찮다면 지워둘게요.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: const Text('아니요.'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: const Text('지울게요.'),
+                        ),
+                      ],
+                    ),
+                  );
+                  return ok ?? false;
+                },
+                background: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.centerRight,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Theme.of(context).dividerColor)
+                  ),
+                  child: const Icon(Icons.delete_outline_rounded),
+                ),
+                onDismissed: (_) async {
+                  final deleted = e;
+                  await b.delete(deleted.id);
+
+                  if(!context.mounted) return;
+                  ScaffoldMessenger.of(context).clearSnackBars();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: const Text('조용히 지워두었어요'),
+                      action: SnackBarAction(
+                        label: '되돌리기',
+                        onPressed: () async {
+                          await b.put(deleted.id, deleted);
+                        },
+                      ),
                     ),
                   );
                 },
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(dateText, style: const TextStyle(fontWeight: FontWeight.w700)),
-                          const Spacer(),
-                          if (e.mood != null) Text(_moodEmoji(e.mood!)),
-                        ],
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EntryDetailScreen(entryId: e.id),
                       ),
-                      const SizedBox(height: 8),
-                      Text(shortPreview),
-                    ],
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Theme.of(context).dividerColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(dateText, style: const TextStyle(fontWeight: FontWeight.w700)),
+                            const Spacer(),
+                            if (e.mood != null) Text(_moodEmoji(e.mood!)),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(shortPreview),
+                      ],
+                    ),
                   ),
-                ),
+                )
               );
             },
           );
