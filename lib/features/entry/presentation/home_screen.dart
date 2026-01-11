@@ -8,6 +8,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 
+import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'entry_detail_screen.dart';
+
+
 final _uuid = Uuid();
 
 class HomeScreen extends StatefulWidget {
@@ -18,6 +23,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static const _prefsKeyWeeklyReflection = 'weekly_reflection_shown_key';
+
   final _controller = TextEditingController();
   int? _mood; // 1 ~ 5 (optional)
 
@@ -34,6 +41,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState(){
     super.initState();
     _initSpeech();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _maybeShowWeeklyReflection();
+    });
   }
 
   Future<void> _initSpeech() async {
@@ -248,6 +259,108 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Future<void> _maybeShowWeeklyReflection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now();
+
+    final weekKey = _weekKeyMonday(now);
+    final lastShown = prefs.getString(_prefsKeyWeeklyReflection);
+
+    // 이번 주에 이미 보여줬으면 종료
+    if (lastShown == weekKey) return;
+
+    final box = Hive.box<Entry>('entries');
+
+    final today = DateTime(now.year, now.month, now.day);
+
+    // "과거 기록"만 (오늘 기록은 제외)
+    final pastEntries = box.values.where((e) => e.date.isBefore(today)).toList();
+
+    if (pastEntries.isEmpty) return;
+
+    final picked = pastEntries[Random().nextInt(pastEntries.length)];
+
+    // 모달을 띄우는 순간, 이번 주 표시 완료로 처리 (재촉/반복 방지)
+    await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
+
+    if (!mounted) return;
+
+    await showDialog<void> (
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
+        final dateText = _formatDate(picked.date);
+
+        return AlertDialog(
+          title: const Text("이번주, 다시 만난 기록"),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 320),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    picked.text,
+                  ),
+                  const SizedBox(height:12),
+                  Text(
+                    '원하면, 그냥 닫아도 괜찮아요.',
+                    style: TextStyle(color: Theme.of(ctx).hintColor),
+                  ),                  
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('조용히 닫기'),
+            ),
+            FilledButton (
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => EntryDetailScreen(entryId: picked.id),
+                  ),
+                );
+              },
+              child: const Text('전체 보기'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 이번 주(월요일 시작)를 키로 사용: yyyyMMdd 형태
+  String _weekKeyMonday(DateTime d) {
+    final day = DateTime(d.year, d.month, d.day);
+    final monday = day.subtract(Duration(days: day.weekday - DateTime.monday));
+    return '${monday.year}${_two(monday.month)}${_two(monday.day)}';
+  }
+
+  String _formatDate(DateTime d) => '${d.year}.${_two(d.month)}.${_two(d.day)}';
+  String _two(int n) => n.toString().padLeft(2, '0');
+
+  String _moodEmoji(int mood) {
+    switch (mood) {
+      case 1: return '😞';
+      case 2: return '😕';
+      case 3: return '😐';
+      case 4: return '🙂';
+      case 5: return '😄';
+      default: return '';
+    }
+  }
+
 }
 
 class _GentleMessageCard extends StatelessWidget {
