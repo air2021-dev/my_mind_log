@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
@@ -14,6 +15,11 @@ import 'entry_detail_screen.dart';
 
 
 final _uuid = Uuid();
+
+enum _HomeMenuAction {
+  showReflection,
+  resetWeeklyReflection,
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,7 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState(){
     super.initState();
-    _initSpeech();
+    // _initSpeech();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _maybeShowWeeklyReflection();
@@ -187,6 +193,33 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('오늘의 마음'),
         actions: [
           IconButton(
+            tooltip: '되돌아보기',
+            onPressed: () => _showReflection(manual: true),
+            icon: const Icon(Icons.history_rounded),
+          ),
+          PopupMenuButton<_HomeMenuAction> (
+            onSelected: (action) {
+              switch( action) {
+                case _HomeMenuAction.resetWeeklyReflection:
+                  _showReflection(manual: false);
+                break;
+                case _HomeMenuAction.showReflection:
+                  _showReflection(manual: true);
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _HomeMenuAction.resetWeeklyReflection,
+                child: Text('주간 회고 초기화'),
+              ),
+              PopupMenuItem(
+                value: _HomeMenuAction.showReflection,
+                child: Text('주간 회고 보기'),
+              ),
+            ],
+          ),
+          IconButton(
             tooltip: '기록 목록',
             onPressed: () {
               Navigator.of(context).push(
@@ -261,82 +294,239 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _maybeShowWeeklyReflection() async {
+
+    // 자동: 주 1회 / 과거 기록만 / 조용히 1회 노출
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
 
     final weekKey = _weekKeyMonday(now);
     final lastShown = prefs.getString(_prefsKeyWeeklyReflection);
-
+    
     // 이번 주에 이미 보여줬으면 종료
     if (lastShown == weekKey) return;
+    
+    final picked = _pickReflectionEntry(onlyPast: true);
+    if (picked == null) return;
 
+    await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
+    if (_isListening) return;
+
+    await _showReflectionDialog(picked, isAuto: true);
+
+    // final box = Hive.box<Entry>('entries');
+
+    // final today = DateTime(now.year, now.month, now.day);
+
+    // // "과거 기록"만 (오늘 기록은 제외)
+    // final pastEntries = box.values.where((e) => e.date.isBefore(today)).toList();
+
+    // if (pastEntries.isEmpty) return;
+
+    // final picked = pastEntries[Random().nextInt(pastEntries.length)];
+
+    // // 모달을 띄우는 순간, 이번 주 표시 완료로 처리 (재촉/반복 방지)
+    // await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
+
+    // if (!mounted) return;
+
+    // await showDialog<void> (
+    //   context: context,
+    //   barrierDismissible: true,
+    //   builder: (ctx) {
+    //     final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
+    //     final dateText = _formatDate(picked.date);
+
+    //     return AlertDialog(
+    //       title: const Text("이번주, 다시 만난 기록"),
+    //       content: ConstrainedBox(
+    //         constraints: const BoxConstraints(maxHeight: 320),
+    //         child: SingleChildScrollView(
+    //           child: Column(
+    //             crossAxisAlignment: CrossAxisAlignment.start,
+    //             children: [
+    //               Text(
+    //                 '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
+    //                 style: const TextStyle(fontWeight: FontWeight.w700),
+    //               ),
+    //               const SizedBox(height: 10),
+    //               Text(
+    //                 picked.text,
+    //               ),
+    //               const SizedBox(height:12),
+    //               Text(
+    //                 '원하면, 그냥 닫아도 괜찮아요.',
+    //                 style: TextStyle(color: Theme.of(ctx).hintColor),
+    //               ),                  
+    //             ],
+    //           ),
+    //         ),
+    //       ),
+    //       actions: [
+    //         TextButton(
+    //           onPressed: () => Navigator.pop(ctx),
+    //           child: const Text('조용히 닫기'),
+    //         ),
+    //         FilledButton (
+    //           onPressed: () {
+    //             Navigator.pop(ctx);
+    //             Navigator.of(context).push(
+    //               MaterialPageRoute(
+    //                 builder: (_) => EntryDetailScreen(entryId: picked.id),
+    //               ),
+    //             );
+    //           },
+    //           child: const Text('전체 보기'),
+    //         ),
+    //       ],
+    //     );
+    //   },
+    // );
+  }
+
+  // 수동: 언제든 여러 번 볼 수 있게.
+  // 과거가 없으면 테스트/사용성을 위해 "오늘 기록"이라도 보여줌(안내 문구 포함);
+  Future<void> _showReflection({required bool manual}) async {
+    final picked = _pickReflectionEntry(onlyPast: !manual);
+
+    if(!mounted) return;
+
+    if (picked == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('아직 되돌아볼 기록이 없어요.')),
+      );
+      return;
+    }
+
+    await _showReflectionDialog(
+      picked,
+      isAuto: !manual,
+      manualFallbackToToday: manual,
+    );
+  }
+
+  // onlyPast=true이면 오늘 제외(과거만)
+  Entry? _pickReflectionEntry({required bool onlyPast}) {
     final box = Hive.box<Entry>('entries');
+    if(box.isEmpty) return null;
 
+    final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    // "과거 기록"만 (오늘 기록은 제외)
-    final pastEntries = box.values.where((e) => e.date.isBefore(today)).toList();
+    final candidates = box.values.where((e) {
+      if (onlyPast) return e.date.isBefore(today);
+      return true;
+    }).toList();
 
-    if (pastEntries.isEmpty) return;
+    // 수동인데 과거 기록이 0개 라면 -> 오늘 포함 후보로 다시 시도
+    if (candidates.isEmpty && !onlyPast) {
+      final all = box.values.toList();
+      if(all.isEmpty) return null;
+      return _weightedPickRecent(all);
+    }
 
-    final picked = pastEntries[Random().nextInt(pastEntries.length)];
+    if (candidates.isEmpty) return null;
 
-    // 모달을 띄우는 순간, 이번 주 표시 완료로 처리 (재촉/반복 방지)
-    await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
+    // "최근 기록 우선" 가중치 랜덤
+    return _weightedPickRecent(candidates);
+  }
 
-    if (!mounted) return;
+  // 최근일수록 높은 확률로 뽑는 가중치 랜덤.
+  // 1/(index+1) 형태로 간단하지만 효과 좋음.
+  Entry _weightedPickRecent(List<Entry> list) {
+    final sorted = list.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    await showDialog<void> (
+    double total = 0;
+    final weights = <double>[];
+
+    for (int i = 0; i < sorted.length; i++){
+      final w = 1.0 / (i + 1); // 가장 최근(0)이 가장 큼
+      weights.add(w);
+      total += w;
+    }
+
+    final r = Random().nextDouble() * total;
+    double acc = 0;
+
+    for (int i = 0; i < sorted.length; i++) {
+      acc += weights[i];
+      if (r <= acc) return sorted[i];
+    }
+
+    return sorted.first;
+  }
+
+  Future<void> _showReflectionDialog(
+    Entry picked, {
+      required bool isAuto,
+      bool manualFallbackToToday = false,
+    }
+  ) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final isToday = picked.date.isAtSameMomentAs(today);
+
+    final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
+    final dateText = _formatDate(picked.date);
+
+    final title = isAuto ? '이번 주, 다시 만난 기록' : '되돌아보기';
+
+    final subtitle = (!isAuto && manualFallbackToToday && isToday)
+      ? '아직 지난 기록이 없어서 오늘 기록을 보여드릴게요.'
+      : '원하면, 그냥 닫아도 괜찮아요.';
+
+    await showDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (ctx) {
-        final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
-        final dateText = _formatDate(picked.date);
-
-        return AlertDialog(
-          title: const Text("이번주, 다시 만난 기록"),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 320),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    picked.text,
-                  ),
-                  const SizedBox(height:12),
-                  Text(
-                    '원하면, 그냥 닫아도 괜찮아요.',
-                    style: TextStyle(color: Theme.of(ctx).hintColor),
-                  ),                  
-                ],
-              ),
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 340),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                Text(picked.text),
+                const SizedBox(height: 12),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: Theme.of(ctx).hintColor),
+                ),
+              ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('조용히 닫기'),
-            ),
-            FilledButton (
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => EntryDetailScreen(entryId: picked.id),
-                  ),
-                );
-              },
-              child: const Text('전체 보기'),
-            ),
-          ],
-        );
-      },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('조용히 닫기'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => EntryDetailScreen(entryId: picked.id)),
+              );
+            },
+            child: const Text('전체 보기'),
+          ),
+        ],
+      ),
+    )  ;
+  }
+  
+  Future<void> _resetWeeklyReflection() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefsKeyWeeklyReflection);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('이번 주 되돌아보기 상태를 초기화했어요.')),
     );
   }
 
