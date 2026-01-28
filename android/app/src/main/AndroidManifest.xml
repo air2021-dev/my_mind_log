@@ -10,7 +10,7 @@
     </queries>
 
     <application
-        android:label="my_mind_log"
+        android:label="@string/app_name"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
