@@ -110,7 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _toggleListening() async {
-    _initSpeech();
+    await _initSpeech();
+    
     if (!_speechReady){
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('이 기기에서 음성 인식을 사용할 수 없어요.')),
