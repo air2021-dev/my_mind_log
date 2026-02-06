@@ -19,6 +19,10 @@ final _uuid = Uuid();
 enum _HomeMenuAction {
   showReflection,
   resetWeeklyReflection,
+  openHistory,
+  openSettings,
+  openHelp,
+  exportBackup,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -192,106 +196,135 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('오늘의 마음'),
+        title: const Text('내 마음 기록', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
         actions: [
-          IconButton(
-            tooltip: '되돌아보기',
-            onPressed: () => _showReflection(manual: true),
-            icon: const Icon(Icons.history_rounded),
-          ),
-          PopupMenuButton<_HomeMenuAction> (
-            onSelected: (action) {
-              switch( action) {
-                case _HomeMenuAction.resetWeeklyReflection:
-                  _showReflection(manual: false);
-                break;
+          PopupMenuButton<_HomeMenuAction>(
+            onSelected: (action) async {
+              switch (action) {
+                case _HomeMenuAction.openHistory:
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const EntriesListScreen()),
+                  );
+                  break;
                 case _HomeMenuAction.showReflection:
-                  _showReflection(manual: true);
+                  await _showReflection(manual: true);
+                  break;
+                case _HomeMenuAction.resetWeeklyReflection:
+                  await _resetWeeklyReflection();
+                  break;
+                case _HomeMenuAction.openSettings:
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('설정 화면은 곧 추가할게요.')),
+                  );
+                  break;
+                case _HomeMenuAction.openHelp:
+                  if (!mounted) return;
+                  showAboutDialog(
+                    context: context,
+                    applicationName: '내 마음 기록',
+                    applicationVersion: 'dev',
+                    applicationLegalese: '© Dear.o',
+                  );
+                  break;
+                case _HomeMenuAction.exportBackup:
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('내보내기/백업은 곧 추가할게요.')),
+                  );
                   break;
               }
             },
-            itemBuilder: (context) => [
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: _HomeMenuAction.openHistory,
+                child: Text('기록 목록'),
+              ),
+              PopupMenuItem(
+                value: _HomeMenuAction.showReflection,
+                child: Text('되돌아보기'),
+              ),
+              PopupMenuDivider(),
               PopupMenuItem(
                 value: _HomeMenuAction.resetWeeklyReflection,
                 child: Text('주간 회고 초기화'),
               ),
+              PopupMenuDivider(),
               PopupMenuItem(
-                value: _HomeMenuAction.showReflection,
-                child: Text('주간 회고 보기'),
+                value: _HomeMenuAction.openSettings,
+                child: Text('설정'),
+              ),
+              PopupMenuItem(
+                value: _HomeMenuAction.exportBackup,
+                child: Text('내보내기/백업'),
+              ),
+              PopupMenuItem(
+                value: _HomeMenuAction.openHelp,
+                child: Text('도움말/정보'),
               ),
             ],
-          ),
-          IconButton(
-            tooltip: '기록 목록',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const EntriesListScreen()),
-              );
-            },
-            icon: const Icon(Icons.list_alt_rounded),
-          ),
-          IconButton(
-            tooltip: _isListening ? '음성 입력 중지' : '음성 입력',
-            onPressed: _toggleListening,
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon( 
-                _isListening 
-                  ? Icons.mic 
-                  : Icons.mic_none_rounded,
-                key: ValueKey(_isListening),
-              ),
-            )
           ),
         ],
       ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _GentleMessageCard(
-              title: '오늘 기록하지 않아도 괜찮아요',
-              body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
-            ),
-            const SizedBox(height: 16),
-
-            const Text('기분 (선택)', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            _MoodRow(
-              selected: _mood,
-              onSelect: (value) => setState(()=> _mood = value),
-            ),
-            const SizedBox(height: 16),
-
-            const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _controller,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
-              ),
-              onChanged: (_) => setState((){}),
-            ),
-            const SizedBox(height: 16),
-
-            if (_isListening) ...[
-              const SizedBox(height:12),
-              _ListeningBanner(
-                startedAt: _listeningStartTime,
-                onStop: _toggleListening,
-              ),
-              const SizedBox(height: 12),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFFFDFCFB),
+              Color(0xFFE2D1F9).withAlpha(76),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _GentleMessageCard(
+                title: '오늘 기록하지 않아도 괜찮아요',
+                body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
+              ),
+              const SizedBox(height: 16),
 
-            ElevatedButton.icon(
-              onPressed: canSave ? _onTapSave: null,
-              icon: const Icon(Icons.check_rounded),
-              label: const Text('조용히 남기기'),
-            ),
+              const Text('기분 (선택)', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              _MoodRow(
+                selected: _mood,
+                onSelect: (value) => setState(()=> _mood = value),
+              ),
+              const SizedBox(height: 16),
+
+              const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _controller,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                ),
+                onChanged: (_) => setState((){}),
+              ),
+              const SizedBox(height: 16),
+
+              if (_isListening) ...[
+                const SizedBox(height:12),
+                _ListeningBanner(
+                  startedAt: _listeningStartTime,
+                  onStop: _toggleListening,
+                ),
+                const SizedBox(height: 12),
+              ],
+
+              ElevatedButton.icon(
+                onPressed: canSave ? _onTapSave: null,
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('조용히 남기기'),
+              ),
           ],
         ),
       ),
+      ) 
     );
   }
 
@@ -315,74 +348,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _showReflectionDialog(picked, isAuto: true);
 
-    // final box = Hive.box<Entry>('entries');
-
-    // final today = DateTime(now.year, now.month, now.day);
-
-    // // "과거 기록"만 (오늘 기록은 제외)
-    // final pastEntries = box.values.where((e) => e.date.isBefore(today)).toList();
-
-    // if (pastEntries.isEmpty) return;
-
-    // final picked = pastEntries[Random().nextInt(pastEntries.length)];
-
-    // // 모달을 띄우는 순간, 이번 주 표시 완료로 처리 (재촉/반복 방지)
-    // await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
-
-    // if (!mounted) return;
-
-    // await showDialog<void> (
-    //   context: context,
-    //   barrierDismissible: true,
-    //   builder: (ctx) {
-    //     final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
-    //     final dateText = _formatDate(picked.date);
-
-    //     return AlertDialog(
-    //       title: const Text("이번주, 다시 만난 기록"),
-    //       content: ConstrainedBox(
-    //         constraints: const BoxConstraints(maxHeight: 320),
-    //         child: SingleChildScrollView(
-    //           child: Column(
-    //             crossAxisAlignment: CrossAxisAlignment.start,
-    //             children: [
-    //               Text(
-    //                 '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
-    //                 style: const TextStyle(fontWeight: FontWeight.w700),
-    //               ),
-    //               const SizedBox(height: 10),
-    //               Text(
-    //                 picked.text,
-    //               ),
-    //               const SizedBox(height:12),
-    //               Text(
-    //                 '원하면, 그냥 닫아도 괜찮아요.',
-    //                 style: TextStyle(color: Theme.of(ctx).hintColor),
-    //               ),                  
-    //             ],
-    //           ),
-    //         ),
-    //       ),
-    //       actions: [
-    //         TextButton(
-    //           onPressed: () => Navigator.pop(ctx),
-    //           child: const Text('조용히 닫기'),
-    //         ),
-    //         FilledButton (
-    //           onPressed: () {
-    //             Navigator.pop(ctx);
-    //             Navigator.of(context).push(
-    //               MaterialPageRoute(
-    //                 builder: (_) => EntryDetailScreen(entryId: picked.id),
-    //               ),
-    //             );
-    //           },
-    //           child: const Text('전체 보기'),
-    //         ),
-    //       ],
-    //     );
-    //   },
-    // );
   }
 
   // 수동: 언제든 여러 번 볼 수 있게.
