@@ -17,12 +17,9 @@ import 'entry_detail_screen.dart';
 final _uuid = Uuid();
 
 enum _HomeMenuAction {
-  showReflection,
-  resetWeeklyReflection,
   openHistory,
+  showReflection,
   openSettings,
-  openHelp,
-  exportBackup,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -134,11 +131,13 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // 마이크 권한 요청
+    // 권한 요청 (iOS는 speech 권한도 필요)
     final mic = await Permission.microphone.request();
-    if(!mic.isGranted) {
+    final speech = await Permission.speech.request();
+
+    if (!mic.isGranted || !speech.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('마이크 권한이 필요해요.')),
+        const SnackBar(content: Text('음성 입력을 위해 마이크/음성 인식 권한이 필요해요.')),
       );
       return;
     }
@@ -194,137 +193,106 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final canSave = _controller.text.trim().isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('내 마음 기록', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-        actions: [
-          PopupMenuButton<_HomeMenuAction>(
-            onSelected: (action) async {
-              switch (action) {
-                case _HomeMenuAction.openHistory:
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const EntriesListScreen()),
-                  );
-                  break;
-                case _HomeMenuAction.showReflection:
-                  await _showReflection(manual: true);
-                  break;
-                case _HomeMenuAction.resetWeeklyReflection:
-                  await _resetWeeklyReflection();
-                  break;
-                case _HomeMenuAction.openSettings:
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('설정 화면은 곧 추가할게요.')),
-                  );
-                  break;
-                case _HomeMenuAction.openHelp:
-                  if (!mounted) return;
-                  showAboutDialog(
-                    context: context,
-                    applicationName: '내 마음 기록',
-                    applicationVersion: 'dev',
-                    applicationLegalese: '© Dear.o',
-                  );
-                  break;
-                case _HomeMenuAction.exportBackup:
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('내보내기/백업은 곧 추가할게요.')),
-                  );
-                  break;
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: _HomeMenuAction.openHistory,
-                child: Text('기록 목록'),
-              ),
-              PopupMenuItem(
-                value: _HomeMenuAction.showReflection,
-                child: Text('되돌아보기'),
-              ),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _HomeMenuAction.resetWeeklyReflection,
-                child: Text('주간 회고 초기화'),
-              ),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: _HomeMenuAction.openSettings,
-                child: Text('설정'),
-              ),
-              PopupMenuItem(
-                value: _HomeMenuAction.exportBackup,
-                child: Text('내보내기/백업'),
-              ),
-              PopupMenuItem(
-                value: _HomeMenuAction.openHelp,
-                child: Text('도움말/정보'),
+    return Stack(
+      children: [
+        const _GradientBackground(),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: const Text('내 마음 기록'),
+            actions: [
+              PopupMenuButton<_HomeMenuAction>(
+                onSelected: (action) async {
+                  switch (action) {
+                    case _HomeMenuAction.openHistory:
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const EntriesListScreen()),
+                      );
+                      break;
+                    case _HomeMenuAction.showReflection:
+                      await _showReflection(manual: true);
+                      break;
+                    case _HomeMenuAction.openSettings:
+                      if (!mounted) return;
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SettingsScreen(
+                            onResetWeeklyReflection: _resetWeeklyReflection,
+                          ),
+                        ),
+                      );
+                      break;
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _HomeMenuAction.openHistory,
+                    child: Text('기록 목록'),
+                  ),
+                  PopupMenuItem(
+                    value: _HomeMenuAction.showReflection,
+                    child: Text('되돌아보기'),
+                  ),
+                  PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: _HomeMenuAction.openSettings,
+                    child: Text('설정'),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFDFCFB),
-              Color(0xFFE2D1F9).withAlpha(76),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 96, 16, 16),
+              children: [
+                const _GentleMessageCard(
+                  title: '오늘 기록하지 않아도 괜찮아요',
+                  body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
+                  icon: Icons.auto_awesome_rounded,
+                ),
+                const SizedBox(height: 16),
+
+                const Text('오늘 기분', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 10),
+                _MoodRow(
+                  selected: _mood,
+                  onSelect: (value) => setState(()=> _mood = value),
+                ),
+                const SizedBox(height: 16),
+
+                const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _controller,
+                  maxLines: 8,
+                  decoration: const InputDecoration(
+                    hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                  ),
+                  onChanged: (_) => setState((){}),
+                ),
+                const SizedBox(height: 16),
+
+                if (_isListening) ...[
+                  const SizedBox(height:12),
+                  _ListeningBanner(
+                    startedAt: _listeningStartTime,
+                    onStop: _toggleListening,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                FilledButton.icon(
+                  onPressed: canSave ? _onTapSave : null,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('조용히 남기기'),
+                ),
             ],
           ),
         ),
-        child: SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _GentleMessageCard(
-                title: '오늘 기록하지 않아도 괜찮아요',
-                body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
-              ),
-              const SizedBox(height: 16),
-
-              const Text('기분 (선택)', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              _MoodRow(
-                selected: _mood,
-                onSelect: (value) => setState(()=> _mood = value),
-              ),
-              const SizedBox(height: 16),
-
-              const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _controller,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
-                ),
-                onChanged: (_) => setState((){}),
-              ),
-              const SizedBox(height: 16),
-
-              if (_isListening) ...[
-                const SizedBox(height:12),
-                _ListeningBanner(
-                  startedAt: _listeningStartTime,
-                  onStop: _toggleListening,
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              ElevatedButton.icon(
-                onPressed: canSave ? _onTapSave: null,
-                icon: const Icon(Icons.check_rounded),
-                label: const Text('조용히 남기기'),
-              ),
-          ],
         ),
-      ),
-      ) 
+      ],
     );
   }
 
@@ -523,27 +491,50 @@ class _HomeScreenState extends State<HomeScreen> {
 class _GentleMessageCard extends StatelessWidget {
   final String title;
   final String body;
+  final IconData icon;
 
   const _GentleMessageCard({
     required this.title,
     required this.body,
+    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(body),
-        ],
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.14),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    body,
+                    style: const TextStyle(height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -568,33 +559,24 @@ class _MoodRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: _moods.entries.map((e) {
         final isSelected = selected == e.key;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () => onSelect(e.key),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    width: isSelected ? 2 : 1,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).dividerColor,
-                  ),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  e.value,
-                  style: const TextStyle(fontSize: 22),
-                ),
-              ),
-            ),
+        return ChoiceChip(
+          label: Text(e.value, style: const TextStyle(fontSize: 20)),
+          selected: isSelected,
+          onSelected: (_) => onSelect(e.key),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.18),
+          backgroundColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.65).toInt()),
+          side: BorderSide(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary.withOpacity(0.35)
+                : Theme.of(context).dividerColor.withOpacity(0.8),
+            width: isSelected ? 1.5 : 1,
           ),
         );
       }).toList(),
@@ -652,3 +634,168 @@ class _ListeningBanner extends StatelessWidget {
   }
 }
 
+
+
+
+class _GradientBackground extends StatelessWidget {
+  const _GradientBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFF7F0E6), // very light beige
+            Color(0xFFFFF3E6), // warm off-white
+            Color(0xFFFFE2CF), // soft peach (slightly orange)
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SettingsScreen extends StatelessWidget {
+  final Future<void> Function() onResetWeeklyReflection;
+
+  const SettingsScreen({
+    super.key,
+    required this.onResetWeeklyReflection,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        const _GradientBackground(),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: const Text('설정'),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 96, 16, 16),
+              children: [
+                const _SectionHeader('되돌아보기'),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.refresh_rounded),
+                        title: const Text('주간 회고 초기화'),
+                        subtitle: const Text('이번 주에 보여준 되돌아보기를 취소하고 다시 볼 수 있어요.'),
+                        onTap: () async {
+                          await onResetWeeklyReflection();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('이번 주 되돌아보기 상태를 초기화했어요.')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                const _SectionHeader('내보내기 / 백업'),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.upload_file_rounded),
+                        title: const Text('내보내기'),
+                        subtitle: const Text('기록을 파일로 저장해요.'),
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('내보내기는 곧 추가할게요.')),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.backup_rounded),
+                        title: const Text('백업'),
+                        subtitle: const Text('기기 간 이동을 위해 백업해요.'),
+                        onTap: () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('백업은 곧 추가할게요.')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                const _SectionHeader('도움말 / 정보'),
+                Card(
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.help_outline_rounded),
+                        title: const Text('도움말'),
+                        subtitle: const Text('간단한 사용법을 확인해요.'),
+                        onTap: () {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('도움말'),
+                              content: const Text(
+                                '오늘의 마음을 짧게라도 남겨보세요.\n\n되돌아보기는 과거 기록 중 일부를 골라 보여줘요.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(),
+                                  child: const Text('닫기'),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.info_outline_rounded),
+                        title: const Text('정보'),
+                        subtitle: const Text('앱 버전, 라이선스, 약관을 확인해요.'),
+                        onTap: () {
+                          showAboutDialog(
+                            context: context,
+                            applicationName: '내 마음 기록',
+                            applicationVersion: 'dev',
+                            applicationLegalese: '© Dear.o',
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
+}

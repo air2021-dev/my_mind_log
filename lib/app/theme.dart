@@ -48,10 +48,10 @@ ThemeData buildWarmTheme() {
     cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,
-      color: Colors.white.withOpacity(0.72),
+      color: const Color(0xFFFFF8F1).withAlpha((255 * 0.88).toInt()),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
-        side: BorderSide(color: Colors.white.withOpacity(0.25)),
+        side: BorderSide(color: Colors.white.withAlpha((255 * 0.25).toInt())),
       ),
     ),
 
@@ -88,7 +88,7 @@ ThemeData buildWarmTheme() {
 
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Colors.white.withOpacity(0.82),
+      fillColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.82).toInt()),
       hintStyle: const TextStyle(color: Color(0xFF6B7280)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
@@ -132,7 +132,7 @@ ThemeData buildWarmTheme() {
     ),
 
     chipTheme: base.chipTheme.copyWith(
-      backgroundColor: Colors.white.withOpacity(0.70),
+      backgroundColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.70).toInt()),
       selectedColor: seed.withOpacity(0.18),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       labelStyle: const TextStyle(color: Color(0xFF111827)),
