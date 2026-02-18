@@ -570,12 +570,12 @@ class _MoodRow extends StatelessWidget {
           onSelected: (_) => onSelect(e.key),
           labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          selectedColor: Theme.of(context).colorScheme.primary.withOpacity(0.18),
-          backgroundColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.65).toInt()),
+          selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+          backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.65),
           side: BorderSide(
             color: isSelected
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.35)
-                : Theme.of(context).dividerColor.withOpacity(0.8),
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
+                : Theme.of(context).dividerColor.withValues(alpha: 0.8),
             width: isSelected ? 1.5 : 1,
           ),
         );

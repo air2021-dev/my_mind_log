@@ -48,15 +48,15 @@ ThemeData buildWarmTheme() {
     cardTheme: CardThemeData(
       elevation: 0,
       margin: EdgeInsets.zero,
-      color: const Color(0xFFFFF8F1).withAlpha((255 * 0.88).toInt()),
+      color: const Color(0xFFFFF8F1).withValues(alpha: 0.88),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
-        side: BorderSide(color: Colors.white.withAlpha((255 * 0.25).toInt())),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
       ),
     ),
 
     dialogTheme: DialogThemeData(
-      backgroundColor: Colors.white.withOpacity(0.88),
+      backgroundColor: Colors.white.withValues(alpha: 0.88),
       shape: RoundedRectangleBorder(borderRadius: radius),
       titleTextStyle: const TextStyle(
         fontSize: 18,
@@ -71,7 +71,7 @@ ThemeData buildWarmTheme() {
     ),
 
     popupMenuTheme: PopupMenuThemeData(
-      color: Colors.white.withOpacity(0.94),
+      color: Colors.white.withValues(alpha: 0.94),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       textStyle: const TextStyle(
         fontSize: 14,
@@ -81,14 +81,14 @@ ThemeData buildWarmTheme() {
 
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: const Color(0xFF111827).withOpacity(0.92),
+      backgroundColor: const Color(0xFF111827).withValues(alpha: 0.92),
       contentTextStyle: const TextStyle(color: Colors.white),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     ),
 
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.82).toInt()),
+      fillColor: const Color(0xFFFFF8F1).withValues(alpha: 0.82),
       hintStyle: const TextStyle(color: Color(0xFF6B7280)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
@@ -101,7 +101,7 @@ ThemeData buildWarmTheme() {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: radius,
-        borderSide: BorderSide(color: seed.withOpacity(0.35), width: 1.4),
+        borderSide: BorderSide(color: seed.withValues(alpha: 0.35), width: 1.4),
       ),
     ),
 
@@ -126,14 +126,14 @@ ThemeData buildWarmTheme() {
       style: OutlinedButton.styleFrom(
         minimumSize: const Size.fromHeight(48),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        side: BorderSide(color: seed.withOpacity(0.35)),
+        side: BorderSide(color: seed.withValues(alpha: 0.35)),
         textStyle: const TextStyle(fontWeight: FontWeight.w700),
       ),
     ),
 
     chipTheme: base.chipTheme.copyWith(
-      backgroundColor: const Color(0xFFFFF8F1).withAlpha((255 * 0.70).toInt()),
-      selectedColor: seed.withOpacity(0.18),
+      backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.70),
+      selectedColor: seed.withValues(alpha: 0.18),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       labelStyle: const TextStyle(color: Color(0xFF111827)),
       secondaryLabelStyle: const TextStyle(color: Color(0xFF111827)),
