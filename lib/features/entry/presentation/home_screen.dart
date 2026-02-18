@@ -778,7 +778,7 @@ class SettingsScreen extends StatelessWidget {
           ),
           body: SafeArea(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 96, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 64, 16, 16),
               children: [
                 const _SectionHeader('되돌아보기'),
                 Card(
