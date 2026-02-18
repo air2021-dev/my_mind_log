@@ -245,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           body: SafeArea(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 96, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 64, 16, 16),
               children: [
                 const _GentleMessageCard(
                   title: '오늘 기록하지 않아도 괜찮아요',
