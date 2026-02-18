@@ -46,12 +46,13 @@ ThemeData buildWarmTheme() {
     ),
 
     cardTheme: CardThemeData(
-      elevation: 0,
+      elevation: 2,
+      shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
       margin: EdgeInsets.zero,
       color: const Color(0xFFFFF8F1).withValues(alpha: 0.88),
       shape: RoundedRectangleBorder(
         borderRadius: radius,
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
+        // side: BorderSide(color: Colors.white.withValues(alpha: 0.25)),
       ),
     ),
 

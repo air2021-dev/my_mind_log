@@ -511,10 +511,13 @@ class _GentleMessageCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.14),
+                color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(blurRadius: 14, color: const Color(0xFF000000).withValues(alpha: 0.06), offset: const Offset(0, 6)),
+                ],
               ),
-              child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -568,16 +571,17 @@ class _MoodRow extends StatelessWidget {
           label: Text(e.value, style: const TextStyle(fontSize: 20)),
           selected: isSelected,
           onSelected: (_) => onSelect(e.key),
+          shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
           labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
           backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.65),
-          side: BorderSide(
-            color: isSelected
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
-                : Theme.of(context).dividerColor.withValues(alpha: 0.8),
-            width: isSelected ? 1.5 : 1,
-          ),
+          // side: BorderSide(
+          //   color: isSelected
+          //       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
+          //       : Theme.of(context).dividerColor.withValues(alpha: 0.8),
+          //   width: isSelected ? 1.5 : 1,
+          // ),
         );
       }).toList(),
     );
@@ -601,8 +605,12 @@ class _ListeningBanner extends StatelessWidget {
       duration: const Duration(milliseconds: 250),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
+        color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha((255 * 0.35).toInt())),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFF000000).withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
+        ],
+        // border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha((255 * 0.35).toInt())),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
