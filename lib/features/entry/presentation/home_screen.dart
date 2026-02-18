@@ -256,21 +256,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const Text('오늘 기분', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                _MoodRow(
-                  selected: _mood,
-                  onSelect: (value) => setState(()=> _mood = value),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: _MoodRow(
+                      selected: _mood,
+                      onSelect: (value) => setState(() => _mood = value),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
 
                 const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: _controller,
-                  maxLines: 8,
-                  decoration: const InputDecoration(
-                    hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    child: TextField(
+                      controller: _controller,
+                      maxLines: 8,
+                      decoration: const InputDecoration(
+                        hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                        filled: false,
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (_) => setState(() {}),
+                    ),
                   ),
-                  onChanged: (_) => setState((){}),
                 ),
                 const SizedBox(height: 16),
 
@@ -414,6 +426,7 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 340),
@@ -502,6 +515,9 @@ class _GentleMessageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
+      elevation: 2,
+      shadowColor: const Color(0xFF000000).withValues(alpha: 0.06),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
@@ -511,13 +527,10 @@ class _GentleMessageCard extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(blurRadius: 14, color: const Color(0xFF000000).withValues(alpha: 0.06), offset: const Offset(0, 6)),
-                ],
               ),
-              child: Icon(icon, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10)),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.92)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -570,12 +583,13 @@ class _MoodRow extends StatelessWidget {
         return ChoiceChip(
           label: Text(e.value, style: const TextStyle(fontSize: 20)),
           selected: isSelected,
+          elevation: 1,
           onSelected: (_) => onSelect(e.key),
-          shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
+          shadowColor: const Color(0xFF000000).withValues(alpha: 0.06),
           labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
-          backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.65),
+          backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
           // side: BorderSide(
           //   color: isSelected
           //       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
