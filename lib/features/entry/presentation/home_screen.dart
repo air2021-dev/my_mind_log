@@ -256,31 +256,49 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const Text('오늘 기분', style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: _MoodRow(
-                      selected: _mood,
-                      onSelect: (value) => setState(() => _mood = value),
-                    ),
-                  ),
+                _MoodRow(
+                  selected: _mood,
+                  onSelect: (value) => setState(() => _mood = value),
                 ),
                 const SizedBox(height: 16),
 
                 const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 8),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    child: TextField(
-                      controller: _controller,
-                      maxLines: 8,
-                      decoration: const InputDecoration(
-                        hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
-                        filled: false,
-                        border: InputBorder.none,
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      // 아주 옅은 톤만 깔아서 배경과 섞이게 (바깥 네모 느낌 최소화)
+                      color: const Color(0xFFFFF3E6).withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        // negative spread로 그림자가 가장자리 안쪽으로 모이게 해서 "눌림" 느낌을 흉내
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.40),
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(-6, -6),
+                        ),
+                        BoxShadow(
+                          color: const Color(0xFF000000).withValues(alpha: 0.12),
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(6, 6),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: TextField(
+                        controller: _controller,
+                        maxLines: 8,
+                        decoration: const InputDecoration(
+                          hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                          filled: false,
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
-                      onChanged: (_) => setState(() {}),
                     ),
                   ),
                 ),
@@ -427,6 +445,10 @@ class _HomeScreenState extends State<HomeScreen> {
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.96),
+        surfaceTintColor: Colors.transparent,
+        elevation: 2,
+        shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
         title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 340),
@@ -439,7 +461,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
-                Text(picked.text),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E6).withValues(alpha: 0.70),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF000000).withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    picked.text,
+                    style: const TextStyle(height: 1.45),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   subtitle,
@@ -465,7 +504,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    )  ;
+    );
   }
   
   Future<void> _resetWeeklyReflection() async {
@@ -580,22 +619,60 @@ class _MoodRow extends StatelessWidget {
       runSpacing: 10,
       children: _moods.entries.map((e) {
         final isSelected = selected == e.key;
-        return ChoiceChip(
-          label: Text(e.value, style: const TextStyle(fontSize: 20)),
-          selected: isSelected,
-          elevation: 1,
-          onSelected: (_) => onSelect(e.key),
-          shadowColor: const Color(0xFF000000).withValues(alpha: 0.06),
-          labelPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
-          backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
-          // side: BorderSide(
-          //   color: isSelected
-          //       ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)
-          //       : Theme.of(context).dividerColor.withValues(alpha: 0.8),
-          //   width: isSelected ? 1.5 : 1,
-          // ),
+
+        // Subtle neumorphic style tuned for this warm theme:
+        // - Idle: a small, tight shadow to the bottom-right (not too spread).
+        // - Selected: simulate an inset/pressed feel using two tight shadows with negative spread.
+        final shadows = isSelected
+            ? <BoxShadow>[
+                // highlight on top-left (inset illusion)
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  blurRadius: 8,
+                  spreadRadius: -6,
+                  offset: const Offset(-3, -3),
+                ),
+                // shade on bottom-right (inset illusion)
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  spreadRadius: -6,
+                  offset: const Offset(3, 3),
+                ),
+              ]
+            : <BoxShadow>[
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.10),
+                  blurRadius: 10,
+                  spreadRadius: -2,
+                  offset: const Offset(4, 6),
+                ),
+              ];
+
+        return GestureDetector(
+          onTap: () => onSelect(e.key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: (isSelected
+                      ? const Color(0xFFFFEBDD) // a touch darker when pressed
+                      : const Color(0xFFFFF3E6))
+                  .withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: shadows,
+            ),
+            child: Text(
+              e.value,
+              style: TextStyle(
+                fontSize: 22,
+                height: 1,
+                // slight scale emphasis when selected
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
         );
       }).toList(),
     );
