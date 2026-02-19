@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:my_mind_log/core/widgets/gradient_background.dart';
 
 class SettingsScreen extends StatelessWidget {
   final Future<void> Function() onResetWeeklyReflection;
@@ -13,7 +14,7 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const _GradientBackground(),
+        const GradientBackground(),
         Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
@@ -123,27 +124,6 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _GradientBackground extends StatelessWidget {
-  const _GradientBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFF7F0E6),
-            Color(0xFFFFF3E6),
-            Color(0xFFFFE2CF),
-          ],
-        ),
-      ),
     );
   }
 }

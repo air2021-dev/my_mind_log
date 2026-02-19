@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:my_mind_log/core/widgets/gradient_background.dart';
 
 import '../data/entry.dart';
 import 'entry_detail_screen.dart';
@@ -28,7 +29,7 @@ class _EntriesListScreenState extends State<EntriesListScreen> {
 
     return Stack(
       children: [
-        const Positioned.fill(child: _GradientBackground()),
+        const Positioned.fill(child: GradientBackground()),
         Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
@@ -310,27 +311,6 @@ class _SearchBar extends StatelessWidget {
                     ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GradientBackground extends StatelessWidget {
-  const _GradientBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFF7F0E6),
-            Color(0xFFFFF3E6),
-            Color(0xFFFFE2CF),
-          ],
         ),
       ),
     );

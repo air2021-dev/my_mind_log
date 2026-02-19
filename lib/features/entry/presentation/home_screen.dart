@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
+import 'package:my_mind_log/core/widgets/gradient_background.dart';
 import '../data/entry.dart';
 import 'entries_list_screen.dart';
 import 'settings_screen.dart';
@@ -195,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Stack(
       children: [
-        const _GradientBackground(),
+        const GradientBackground(),
         Scaffold(
           backgroundColor: Colors.transparent,
           extendBodyBehindAppBar: true,
@@ -728,30 +729,6 @@ class _ListeningBanner extends StatelessWidget {
             child: const Text('멈추기'),
           )
         ],
-      ),
-    );
-  }
-}
-
-
-
-
-class _GradientBackground extends StatelessWidget {
-  const _GradientBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0xFFF7F0E6), // very light beige
-            Color(0xFFFFF3E6), // warm off-white
-            Color(0xFFFFE2CF), // soft peach (slightly orange)
-          ],
-        ),
       ),
     );
   }
