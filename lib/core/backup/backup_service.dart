@@ -1,42 +1,64 @@
-
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:hive/hive.dart';
-import 'package:my_mind_log/features/entry/data/entry.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
+
+import 'package:my_mind_log/features/entry/data/entry.dart';
 
 enum BackupConflictPolicy {
   skip,
   overwrite,
   addNew,
 }
+
 class ImportResult {
   final int added;
   final int overwritten;
   final int skipped;
 
-  ImportResult({
+  const ImportResult({
     required this.added,
     required this.overwritten,
     required this.skipped,
   });
 }
 
+class ImportPreview {
+  /// Total items in the backup entries array.
+  final int total;
+
+  /// Number of entries successfully parsed into `Entry`.
+  final int parsed;
+
+  /// Number of invalid/unparsable items.
+  final int invalid;
+
+  /// Number of parsed entries whose id already exists in the current box.
+  final int conflicts;
+
+  const ImportPreview({
+    required this.total,
+    required this.parsed,
+    required this.invalid,
+    required this.conflicts,
+  });
+}
+
 class BackupService {
   static const _uuid = Uuid();
 
+  /// Export all entries to a JSON file and share it.
   static Future<void> exportBackup() async {
     final box = Hive.box<Entry>('entries');
-    final entries = box.values.toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    
-    final payload = {
-      'version': 1,
-      'app': 'MyMindLog',
+    final entries = box.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    final payload = <String, dynamic>{
+      'schemaVersion': 1,
+      'app': 'my_mind_log',
       'exportedAt': DateTime.now().toUtc().toIso8601String(),
       'deviceTimeZone': DateTime.now().timeZoneName,
       'entries': entries.map(_entryToJson).toList(),
@@ -46,55 +68,54 @@ class BackupService {
 
     final dir = await getTemporaryDirectory();
     final stamp = DateTime.now();
-    String tow(int n) => n.toString().padLeft(2, '0');
-    final filename = 'mymindlog_backup_${stamp.year}${tow(stamp.month)}${tow(stamp.day)}.json';
-    
+    String two(int n) => n.toString().padLeft(2, '0');
+    final filename =
+        'my_mind_log_backup_${stamp.year}${two(stamp.month)}${two(stamp.day)}.json';
+
     final file = File('${dir.path}/$filename');
     await file.writeAsString(jsonStr, flush: true);
 
     await Share.shareXFiles(
-      [XFile(file.path, mimeType:'application/json')],
-      subject: 'My_Mind_Log_Backup',
-      text: 'MyMindLog Backup - $filename',
+      [XFile(file.path, mimeType: 'application/json')],
+      subject: '내 마음 기록 백업',
+      text: '내 마음 기록 백업 파일이에요. ($filename)',
     );
   }
 
-  /// SettingsScreen에서 policy를 받은 뒤 호출하는 형태가 깔끔함
-  static Future<ImportResult> importBackup({
+  /// Parse a backup JSON string and return a preview (counts + conflicts).
+  ///
+  /// This does NOT write anything to Hive.
+  static ImportPreview previewFromJson(String json, Box<Entry> box) {
+    final parsedBackup = _parseBackup(json);
+
+    int conflicts = 0;
+    for (final e in parsedBackup.entries) {
+      if (box.containsKey(e.id)) conflicts++;
+    }
+
+    return ImportPreview(
+      total: parsedBackup.total,
+      parsed: parsedBackup.entries.length,
+      invalid: parsedBackup.invalid,
+      conflicts: conflicts,
+    );
+  }
+
+  /// Import entries from a backup JSON string into the Hive box.
+  static Future<ImportResult> importFromJson(
+    String json, {
     required BackupConflictPolicy policy,
   }) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) {
-      return ImportResult(added: 0, overwritten: 0, skipped: 0);
-    }
-
-    final bytes = result.files.first.bytes;
-    final path = result.files.first.path;
-    if(bytes == null && path == null) {
-      throw '파일을 읽을 수 없어요.';
-    }
-    
-    final content = bytes != null ? utf8.decode(bytes) : await File(path!).readAsString();
-    final decoded = jsonDecode(content);
-    if (decoded is! Map<String, dynamic>) throw '올바른 백업 형식이 아니에요.';
-
-    final list = decoded['entries'];
-    if (list is! List) throw '백업에 entries가 없어요.';
-
+    final parsedBackup = _parseBackup(json);
     final box = Hive.box<Entry>('entries');
 
-    int added = 0, overwritten = 0, skipped = 0;
+    int added = 0;
+    int overwritten = 0;
+    int skipped = 0;
 
-    for (final item in list) {
-      if (item is! Map) continue;
-      final m = item.cast<String, dynamic>();
-      final e = _entryFromJson(m);
-
+    for (final e in parsedBackup.entries) {
       final exists = box.containsKey(e.id);
+
       if (!exists) {
         await box.put(e.id, e);
         added++;
@@ -126,71 +147,71 @@ class BackupService {
     return ImportResult(added: added, overwritten: overwritten, skipped: skipped);
   }
 
-  /// UI에서 "정책 선택 다이얼로그 띄우기" 전에 conflicts 수만 알고 싶을 때
-  static Future<int> peekConflictsInPickedFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: true,
-    );
-    if (result == null || result.files.isEmpty) {
-      return 0;
+  static _ParsedBackup _parseBackup(String json) {
+    final decoded = jsonDecode(json);
+    if (decoded is! Map<String, dynamic>) {
+      throw '올바른 백업 형식이 아니에요.';
     }
-
-    final bytes = result.files.first.bytes;
-    final path = result.files.first.path;
-    if(bytes == null && path == null) {
-      throw '파일을 읽을 수 없어요.';
-    }
-    
-    final content = bytes != null ? utf8.decode(bytes) : await File(path!).readAsString();
-    final decoded = jsonDecode(content);
-    if (decoded is! Map<String, dynamic>) throw '올바른 백업 형식이 아니에요.';
 
     final list = decoded['entries'];
-    if (list is! List) throw '백업에 entries가 없어요.';
-
-    final box = Hive.box<Entry>('entries');
-
-    int conflicts = 0;
-
-    for (final item in list) {
-      if (item is! Map) continue;
-      final m = item.cast<String, dynamic>();
-      final id = (m['id'] ?? '').toString();
-      if (id.isNotEmpty && box.containsKey(id)) conflicts++;
+    if (list is! List) {
+      throw '백업에 entries가 없어요.';
     }
 
-    return conflicts;
+    final entries = <Entry>[];
+    int invalid = 0;
+
+    for (final item in list) {
+      if (item is! Map) {
+        invalid++;
+        continue;
+      }
+
+      try {
+        final m = item.cast<String, dynamic>();
+        final e = _entryFromJson(m);
+        entries.add(e);
+      } catch (_) {
+        invalid++;
+      }
+    }
+
+    return _ParsedBackup(
+      total: list.length,
+      invalid: invalid,
+      entries: entries,
+    );
   }
-  
+
   static Map<String, dynamic> _entryToJson(Entry e) {
-    String tow(int n) => n.toString().padLeft(2, '0');
+    String two(int n) => n.toString().padLeft(2, '0');
     final d = e.date;
-    final dateStr = '${d.year}-${tow(d.month)}-${tow(d.day)}';
+    final dateStr = '${d.year}-${two(d.month)}-${two(d.day)}';
 
     return {
       'id': e.id,
       'date': dateStr,
       'text': e.text,
       'createdAt': e.createdAt.toUtc().toIso8601String(),
-      if(e.mood != null) 'mood': e.mood,
+      if (e.mood != null) 'mood': e.mood,
     };
   }
 
   static Entry _entryFromJson(Map<String, dynamic> m) {
     final id = (m['id'] ?? '').toString();
     final text = (m['text'] ?? '').toString();
-    
+
     final dateRaw = (m['date'] ?? '').toString();
     final parts = dateRaw.split('-');
-    final date = (parts.length == 3) ? DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2])) : DateTime.now();
-    
+    final date = (parts.length == 3)
+        ? DateTime(int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]))
+        : DateTime.now();
+
     final createdAtRaw = (m['createdAt'] ?? '').toString();
     DateTime createdAt;
     try {
       createdAt = DateTime.parse(createdAtRaw);
-    }catch (_) {
+    } catch (_) {
       createdAt = DateTime.now();
     }
 
@@ -205,4 +226,16 @@ class BackupService {
       createdAt: createdAt,
     );
   }
+}
+
+class _ParsedBackup {
+  final int total;
+  final int invalid;
+  final List<Entry> entries;
+
+  const _ParsedBackup({
+    required this.total,
+    required this.invalid,
+    required this.entries,
+  });
 }
