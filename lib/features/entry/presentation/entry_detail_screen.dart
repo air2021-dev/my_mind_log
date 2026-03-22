@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:my_mind_log/core/widgets/gradient_background.dart';
+import 'package:my_mind_log/features/entry/presentation/edit_entry_screen.dart';
 
 import '../data/entry.dart';
 
@@ -26,6 +27,17 @@ class EntryDetailScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('기록 상세'),
             actions: [
+              IconButton(
+                tooltip: '수정',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => EditEntryScreen(entryId: entryId),
+                    ),
+                  );
+                },
+              ),
               IconButton(
                 tooltip: '삭제',
                 icon: const Icon(Icons.delete_outline_rounded),
