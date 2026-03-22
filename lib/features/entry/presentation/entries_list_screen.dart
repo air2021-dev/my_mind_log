@@ -40,6 +40,17 @@ class _EntriesListScreenState extends State<EntriesListScreen> {
           body: SafeArea(
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 64, 16, 8),
+                  child: _SearchBar(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _query = v),
+                    onClear: () {
+                      _searchController.clear();
+                      setState(() => _query = '');
+                    },
+                  ),
+                ),
                 Expanded(
                   child: ValueListenableBuilder(
                     valueListenable: box.listenable(),
@@ -62,18 +73,8 @@ class _EntriesListScreenState extends State<EntriesListScreen> {
                             }).toList();
 
                       return ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 64, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                         children: [
-                          _SearchBar(
-                            controller: _searchController,
-                            onChanged: (v) => setState(() => _query = v),
-                            onClear: () {
-                              _searchController.clear();
-                              setState(() => _query = '');
-                            },
-                          ),
-                          const SizedBox(height: 8),
-
                           if (entries.isEmpty) ...[
                             const SizedBox(height: 24),
                             const Center(child: Text('아직 남겨둔 기록이 없어요.')),
@@ -291,7 +292,7 @@ class _SearchBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: Colors.white.withOpacity(0.40),
+              color: Colors.white.withValues(alpha: 0.40),
               blurRadius: 18,
               spreadRadius: -10,
               offset: const Offset(-6, -6),
