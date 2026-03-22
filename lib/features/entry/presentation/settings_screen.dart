@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'package:my_mind_log/features/entry/data/entry.dart';
 
 import 'package:my_mind_log/core/widgets/gradient_background.dart';
+import 'package:my_mind_log/core/widgets/ad_banner.dart';
 import 'package:my_mind_log/core/backup/backup_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
@@ -168,6 +169,8 @@ class SettingsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                const AdBanner(),
               ],
             ),
           ),

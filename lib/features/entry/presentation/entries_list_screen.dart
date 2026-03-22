@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:my_mind_log/core/widgets/gradient_background.dart';
+import 'package:my_mind_log/core/widgets/ad_banner.dart';
 
 import '../data/entry.dart';
 import 'entry_detail_screen.dart';
@@ -37,80 +38,92 @@ class _EntriesListScreenState extends State<EntriesListScreen> {
             title: const Text('기록 목록'),
           ),
           body: SafeArea(
-            child: ValueListenableBuilder(
-              valueListenable: box.listenable(),
-              builder: (context, Box<Entry> b, _) {
-                final entries = b.values.toList()
-                  ..sort((a, c) => c.createdAt.compareTo(a.createdAt));
+            child: Column(
+              children: [
+                Expanded(
+                  child: ValueListenableBuilder(
+                    valueListenable: box.listenable(),
+                    builder: (context, Box<Entry> b, _) {
+                      final entries = b.values.toList()
+                        ..sort((a, c) => c.createdAt.compareTo(a.createdAt));
 
-                final q = _query.trim().toLowerCase();
-                final filtered = q.isEmpty
-                    ? entries
-                    : entries.where((e) {
-                        final text = e.text.toLowerCase();
-                        final date = _formatDate(e.date).toLowerCase();
-                        final mood = e.mood != null ? _moodEmoji(e.mood!).toLowerCase() : '';
-                        return text.contains(q) || date.contains(q) || mood.contains(q);
-                      }).toList();
+                      final q = _query.trim().toLowerCase();
+                      final filtered = q.isEmpty
+                          ? entries
+                          : entries.where((e) {
+                              final text = e.text.toLowerCase();
+                              final date = _formatDate(e.date).toLowerCase();
+                              final mood = e.mood != null
+                                  ? _moodEmoji(e.mood!).toLowerCase()
+                                  : '';
+                              return text.contains(q) ||
+                                  date.contains(q) ||
+                                  mood.contains(q);
+                            }).toList();
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 32, 16, 16),
-                  children: [
-                    _SearchBar(
-                      controller: _searchController,
-                      onChanged: (v) => setState(() => _query = v),
-                      onClear: () {
-                        _searchController.clear();
-                        setState(() => _query = '');
-                      },
-                    ),
-                    const SizedBox(height: 8),
+                      return ListView(
+                        padding: const EdgeInsets.fromLTRB(16, 64, 16, 8),
+                        children: [
+                          _SearchBar(
+                            controller: _searchController,
+                            onChanged: (v) => setState(() => _query = v),
+                            onClear: () {
+                              _searchController.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                          const SizedBox(height: 8),
 
-                    if (entries.isEmpty) ...[
-                      const SizedBox(height: 24),
-                      const Center(child: Text('아직 남겨둔 기록이 없어요.')),
-                    ] else if (filtered.isEmpty) ...[
-                      const SizedBox(height: 24),
-                      const Center(child: Text('검색 결과가 없어요.')),
-                    ] else ...[
-                      for (final e in filtered) ...[
-                        _EntryTile(
-                          entry: e,
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => EntryDetailScreen(entryId: e.id),
+                          if (entries.isEmpty) ...[
+                            const SizedBox(height: 24),
+                            const Center(child: Text('아직 남겨둔 기록이 없어요.')),
+                          ] else if (filtered.isEmpty) ...[
+                            const SizedBox(height: 24),
+                            const Center(child: Text('검색 결과가 없어요.')),
+                          ] else ...[
+                            for (final e in filtered) ...[
+                              _EntryTile(
+                                entry: e,
+                                onTap: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          EntryDetailScreen(entryId: e.id),
+                                    ),
+                                  );
+                                },
+                                onDelete: () async {
+                                  final ok = await _confirmDelete(context);
+                                  if (ok != true) return;
+
+                                  final deleted = e;
+                                  await b.delete(deleted.id);
+
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).clearSnackBars();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: const Text('조용히 지워두었어요'),
+                                      action: SnackBarAction(
+                                        label: '되돌리기',
+                                        onPressed: () async {
+                                          await b.put(deleted.id, deleted);
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                          onDelete: () async {
-                            final ok = await _confirmDelete(context);
-                            if (ok != true) return;
-
-                            final deleted = e;
-                            await b.delete(deleted.id);
-
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).clearSnackBars();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text('조용히 지워두었어요'),
-                                action: SnackBarAction(
-                                  label: '되돌리기',
-                                  onPressed: () async {
-                                    await b.put(deleted.id, deleted);
-                                  },
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ],
-                  ],
-                );
-              },
+                              const SizedBox(height: 8),
+                            ],
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const AdBanner(),
+              ],
             ),
           ),
         ),
@@ -121,12 +134,12 @@ class _EntriesListScreenState extends State<EntriesListScreen> {
   Future<bool?> _confirmDelete(BuildContext context) {
     return showDialog<bool>(
       context: context,
-      barrierColor: const Color(0xFF000000).withOpacity(0.25),
+      barrierColor: const Color(0xFF000000).withValues(alpha: 0.25),
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFFF8F1).withOpacity(0.96),
+        backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.96),
         surfaceTintColor: Colors.transparent,
         elevation: 2,
-        shadowColor: const Color(0xFF000000).withOpacity(0.08),
+        shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('지울까요?'),
         content: const Text('이 기록은 휴지통 없이 바로 사라져요.\n괜찮다면 지워둘게요.'),
@@ -200,11 +213,11 @@ class _EntryTile extends StatelessWidget {
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFE2CF).withOpacity(0.80),
+          color: const Color(0xFFFFE2CF).withValues(alpha: 0.80),
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF000000).withOpacity(0.06),
+              color: const Color(0xFF000000).withValues(alpha: 0.06),
               blurRadius: 12,
               offset: const Offset(0, 8),
             ),
@@ -218,11 +231,11 @@ class _EntryTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFFFFF8F1).withOpacity(0.92),
+            color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
             borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF000000).withOpacity(0.06),
+                color: const Color(0xFF000000).withValues(alpha: 0.06),
                 blurRadius: 14,
                 offset: const Offset(0, 8),
               ),
@@ -274,7 +287,7 @@ class _SearchBar extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF3E6).withOpacity(0.55),
+          color: const Color(0xFFFFF3E6).withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
@@ -284,7 +297,7 @@ class _SearchBar extends StatelessWidget {
               offset: const Offset(-6, -6),
             ),
             BoxShadow(
-              color: const Color(0xFF000000).withOpacity(0.12),
+              color: const Color(0xFF000000).withValues(alpha: 0.12),
               blurRadius: 18,
               spreadRadius: -10,
               offset: const Offset(6, 6),
