@@ -35,6 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _controller = TextEditingController();
   int? _mood; // 1 ~ 5 (optional)
+  String? _todayEntryId;
 
   final SpeechToText _stt = SpeechToText();
   bool _speechReady = false;
@@ -53,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // _initSpeech();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadTodayIntoEditor();
       _maybeShowWeeklyReflection();
     });
   }
@@ -85,7 +87,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onTapSave() async {
-    final text = _controller.text.trim();
+    final raw = _controller.text;
+    final text = raw.trim();
     if (text.isEmpty) return;
 
     final box = Hive.box<Entry>('entries');
@@ -98,37 +101,34 @@ class _HomeScreenState extends State<HomeScreen> {
       final entry = Entry(
         id: _uuid.v4(),
         date: today,
-        text: text,
+        text: raw.trimRight(),
         mood: _mood,
         createdAt: now,
       );
-
       await box.put(entry.id, entry);
+      _todayEntryId = entry.id;
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('오늘 기록을 시작했어요.')),
+        const SnackBar(content: Text('오늘 기록을 저장했어요.')),
       );
-    } else {
-      final updated = Entry(
-        id: existing.id,
-        date: existing.date,
-        text: _appendWithTimeStamp(existing.text, text, now),
-        // 기분을 새로 선택했다면 갱신, 선택하지 않았다면 기존 유지
-        mood: _mood ?? existing.mood,
-        createdAt: existing.createdAt,
-      );
-
-      await box.put(updated.id, updated);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('오늘 기록에 이어서 남겼어요.')),
-      );
+      return;
     }
 
-    _controller.clear();
-    setState(() => _mood = null);
+    final updated = Entry(
+      id: existing.id,
+      date: existing.date,
+      text: raw.trimRight(),
+      mood: _mood ?? existing.mood,
+      createdAt: existing.createdAt,
+    );
+
+    await box.put(updated.id, updated);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('오늘 기록을 저장했어요.')),
+    );
   }
 
   Future<void> _toggleListening() async {
@@ -409,6 +409,58 @@ class _HomeScreenState extends State<HomeScreen> {
     if (o.isEmpty) return n;
     if (n.isEmpty) return o;
     return o + header + n;
+  }
+
+  bool _isTimeHeaderLine(String line) {
+    final l = line.trim();
+    // Matches: — 09:05
+    return RegExp(r'^—\s\d{2}:\d{2}$').hasMatch(l);
+  }
+
+  String _ensureTrailingSessionHeader(String text, DateTime now) {
+    final lines = text.split('\n');
+    // Find last non-empty line
+    for (int i = lines.length - 1; i >= 0; i--) {
+      final l = lines[i].trim();
+      if (l.isEmpty) continue;
+      if (_isTimeHeaderLine(l)) return text;
+      break;
+    }
+
+    final t = '${_two(now.hour)}:${_two(now.minute)}';
+    final header = '— $t';
+
+    final trimmed = text.trimRight();
+    if (trimmed.isEmpty) {
+      return '$header\n';
+    }
+    // Ensure a blank line before the header for readability.
+    return '$trimmed\n\n$header\n';
+  }
+
+  void _moveCursorToEnd() {
+    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+  }
+
+  Future<void> _loadTodayIntoEditor() async {
+    final box = Hive.box<Entry>('entries');
+    final existing = _findTodayEntry(box);
+    final now = DateTime.now();
+
+    if (existing == null) {
+      _todayEntryId = null;
+      _controller.text = _ensureTrailingSessionHeader('', now);
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    _todayEntryId = existing.id;
+    _mood = existing.mood;
+    _controller.text = _ensureTrailingSessionHeader(existing.text, now);
+    _moveCursorToEnd();
+
+    if (mounted) setState(() {});
   }
   // onlyPast=true이면 오늘 제외(과거만)
   Entry? _pickReflectionEntry({required bool onlyPast}) {
