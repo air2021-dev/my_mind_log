@@ -45,6 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   DateTime? _listeningStartTime;
 
+  DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
+
   @override
   void initState(){
     super.initState();
@@ -82,33 +84,51 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _onTapSave() async{
+  Future<void> _onTapSave() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
 
     final box = Hive.box<Entry>('entries');
     final now = DateTime.now();
+    final today = _dayKey(now);
 
-    // date는 "오늘"의 의미만 남기기 위해 시/분/초 제거
-    final today = DateTime(now.year, now.month, now.day);
+    final existing = _findTodayEntry(box);
 
-    final entry = Entry(
-      id: _uuid.v4(),
-      date: today,
-      text: text,
-      mood: _mood,
-      createdAt: now,
-    );
+    if (existing == null) {
+      final entry = Entry(
+        id: _uuid.v4(),
+        date: today,
+        text: text,
+        mood: _mood,
+        createdAt: now,
+      );
 
-    await box.put(entry.id, entry);
+      await box.put(entry.id, entry);
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('조용히 남겨두었어요.')),
-    );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오늘 기록을 시작했어요.')),
+      );
+    } else {
+      final updated = Entry(
+        id: existing.id,
+        date: existing.date,
+        text: _appendWithTimeStamp(existing.text, text, now),
+        // 기분을 새로 선택했다면 갱신, 선택하지 않았다면 기존 유지
+        mood: _mood ?? existing.mood,
+        createdAt: existing.createdAt,
+      );
+
+      await box.put(updated.id, updated);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오늘 기록에 이어서 남겼어요.')),
+      );
+    }
 
     _controller.clear();
-    setState(()=> _mood = null);
+    setState(() => _mood = null);
   }
 
   Future<void> _toggleListening() async {
@@ -370,6 +390,26 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Entry? _findTodayEntry(Box<Entry> box){
+    final today = _dayKey(DateTime.now());
+    try{
+      return box.values.firstWhere((e) => _dayKey(e.date) == today);
+    } catch (_){
+      return null;
+    }
+  }
+
+  String _appendWithTimeStamp(String oldText, String newText, DateTime now) {
+    final t = '${_two(now.hour)}:${_two(now.minute)}';
+    final header = '\n\n— $t\n';
+
+    final o = oldText.trimRight();
+    final n = newText.trim();
+    
+    if (o.isEmpty) return n;
+    if (n.isEmpty) return o;
+    return o + header + n;
+  }
   // onlyPast=true이면 오늘 제외(과거만)
   Entry? _pickReflectionEntry({required bool onlyPast}) {
     final box = Hive.box<Entry>('entries');
