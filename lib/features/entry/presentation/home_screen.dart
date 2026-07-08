@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 import 'package:my_mind_log/core/widgets/gradient_background.dart';
 import '../data/entry.dart';
@@ -36,6 +37,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final _controller = TextEditingController();
   int? _mood; // 1 ~ 5 (optional)
   String? _todayEntryId;
+  String _lastLoadedText = '';
+  late final Box<Entry> _entriesBox;
 
   final SpeechToText _stt = SpeechToText();
   bool _speechReady = false;
@@ -51,6 +54,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState(){
     super.initState();
+    _entriesBox = Hive.box<Entry>('entries');
+    _entriesBox.listenable().addListener(_onEntriesBoxChanged);
     // _initSpeech();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -81,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose(){
+    _entriesBox.listenable().removeListener(_onEntriesBoxChanged);
     _stt.stop();
     _controller.dispose();
     super.dispose();
@@ -96,39 +102,45 @@ class _HomeScreenState extends State<HomeScreen> {
     final today = _dayKey(now);
 
     final existing = _findTodayEntry(box);
+    final stored = raw.trimRight();
 
     if (existing == null) {
       final entry = Entry(
         id: _uuid.v4(),
         date: today,
-        text: raw.trimRight(),
+        text: stored,
         mood: _mood,
         createdAt: now,
       );
       await box.put(entry.id, entry);
       _todayEntryId = entry.id;
-
+      _lastLoadedText = _controller.text;
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('오늘 기록을 저장했어요.')),
       );
-      return;
+    } else {
+      final updated = Entry(
+        id: existing.id,
+        date: existing.date,
+        text: stored,
+        mood: _mood ?? existing.mood,
+        createdAt: existing.createdAt,
+      );
+
+      await box.put(updated.id, updated);
+      _lastLoadedText = _controller.text;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오늘 기록을 저장했어요.')),
+      );
     }
-
-    final updated = Entry(
-      id: existing.id,
-      date: existing.date,
-      text: raw.trimRight(),
-      mood: _mood ?? existing.mood,
-      createdAt: existing.createdAt,
-    );
-
-    await box.put(updated.id, updated);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('오늘 기록을 저장했어요.')),
-    );
+    final next = _ensureTrailingSessionHeader(_controller.text, DateTime.now());
+    if (next != _controller.text) {
+      _controller.text = next;
+    }
+    _lastLoadedText = _controller.text;
+    _moveCursorToEnd();
   }
 
   Future<void> _toggleListening() async {
@@ -196,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final base = _voiceBaseText;
 
     // 베이스 텍스트가 비어있지 않으면 ㅎ나 칸 띄워서 자연스럽게 붙이기
-    final needsSpace = base.isNotEmpty && !base.endsWith(RegExp(r'\s').toString());
+    final needsSpace = base.isNotEmpty && !RegExp(r'\s$').hasMatch(base);
     
     final combined = words.isEmpty ? base : (needsSpace ? '$base $words' : '$base$words');
 
@@ -227,22 +239,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 onSelected: (action) async {
                   switch (action) {
                     case _HomeMenuAction.openHistory:
-                      Navigator.of(context).push(
+                      await Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const EntriesListScreen()),
                       );
+                      if (!mounted) return;
+                      _refreshTrailingHeaderTime();
                       break;
                     case _HomeMenuAction.showReflection:
                       await _showReflection(manual: true);
                       break;
                     case _HomeMenuAction.openSettings:
                       if (!mounted) return;
-                      Navigator.of(context).push(
+                      await Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => SettingsScreen(
                             onResetWeeklyReflection: _resetWeeklyReflection,
                           ),
                         ),
                       );
+                      if (!mounted) return;
+                      _refreshTrailingHeaderTime();
                       break;
                   }
                 },
@@ -270,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const _GentleMessageCard(
                   title: '오늘 기록하지 않아도 괜찮아요',
-                  body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
+                  body: '지금 떠오르는 한 문장만 남겨도 충분해요.\n(시간 구분선은 자동으로 붙어요)',
                   icon: Icons.auto_awesome_rounded,
                 ),
                 const SizedBox(height: 16),
@@ -413,8 +429,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _isTimeHeaderLine(String line) {
     final l = line.trim();
-    // Matches: — 09:05
-    return RegExp(r'^—\s\d{2}:\d{2}$').hasMatch(l);
+    // Accept:
+    //  — 09:05
+    //  — 09:05 🙂
+    // Allow extra spaces.
+    return RegExp(r'^—\s*\d{2}:\d{2}(\s+\S+)?$').hasMatch(l);
+  }
+
+  String _buildHeader(DateTime now) {
+    final t = '${_two(now.hour)}:${_two(now.minute)}';
+    final emoji = _mood == null ? '' : ' ${_moodEmoji(_mood!)}';
+    return '— $t$emoji';
   }
 
   String _ensureTrailingSessionHeader(String text, DateTime now) {
@@ -427,8 +452,7 @@ class _HomeScreenState extends State<HomeScreen> {
       break;
     }
 
-    final t = '${_two(now.hour)}:${_two(now.minute)}';
-    final header = '— $t';
+    final header = _buildHeader(now);
 
     final trimmed = text.trimRight();
     if (trimmed.isEmpty) {
@@ -437,7 +461,51 @@ class _HomeScreenState extends State<HomeScreen> {
     // Ensure a blank line before the header for readability.
     return '$trimmed\n\n$header\n';
   }
+  
+  void _refreshTrailingHeaderTime() {
+    final now = DateTime.now();
+    final text = _controller.text;
+    final lines = text.split('\n');
 
+    // 마지막 non-empty line 찾기
+    int lastIdx = -1;
+    for (int i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim().isEmpty) continue;
+      lastIdx = i;
+      break;
+    }
+
+    final header = _buildHeader(now);
+
+    if (lastIdx == -1) {
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    if (_isTimeHeaderLine(lines[lastIdx])) {
+      // 마지막 줄이 헤더면 현재 시간으로 교체
+      lines[lastIdx] = header;
+      final next = lines.join('\n');
+      if (next != _controller.text) _controller.text = next;
+
+      _lastLoadedText = _controller.text;
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // 마지막 줄이 헤더가 아니면 헤더를 보장
+    final next = _ensureTrailingSessionHeader(_controller.text, now);
+    if (next != _controller.text) _controller.text = next;
+
+    _lastLoadedText = _controller.text;
+    _moveCursorToEnd();
+    if (mounted) setState(() {});
+  }
   void _moveCursorToEnd() {
     _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
   }
@@ -449,7 +517,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (existing == null) {
       _todayEntryId = null;
-      _controller.text = _ensureTrailingSessionHeader('', now);
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
       _moveCursorToEnd();
       if (mounted) setState(() {});
       return;
@@ -457,7 +527,39 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _todayEntryId = existing.id;
     _mood = existing.mood;
-    _controller.text = _ensureTrailingSessionHeader(existing.text, now);
+    final next = _ensureTrailingSessionHeader(existing.text, now);
+    _controller.text = next;
+    _lastLoadedText = next;
+    _moveCursorToEnd();
+
+    if (mounted) setState(() {});
+  }
+
+  void _onEntriesBoxChanged() {
+    // If the user has typed since last load, don't overwrite their in-progress edits.
+    if (_controller.text != _lastLoadedText) return;
+
+    final existing = _findTodayEntry(_entriesBox);
+    final now = DateTime.now();
+
+    if (existing == null) {
+      _todayEntryId = null;
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
+      _moveCursorToEnd();
+      if (mounted) setState(() => _mood = null);
+      return;
+    }
+
+    _todayEntryId = existing.id;
+    _mood = existing.mood;
+    final next = _ensureTrailingSessionHeader(existing.text, now);
+
+    if (_controller.text == next) return;
+
+    _controller.text = next;
+    _lastLoadedText = next;
     _moveCursorToEnd();
 
     if (mounted) setState(() {});

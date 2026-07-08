@@ -21,15 +21,99 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
   final _controller = TextEditingController();
   int? _mood;
 
+  bool _isTimeHeaderLine(String line) {
+    final l = line.trim();
+    // Accept:
+    //  — 09:05
+    //  — 09:05 🙂
+    // Allow extra spaces.
+    return RegExp(r'^—\s*\d{2}:\d{2}(\s+\S+)?$').hasMatch(l);
+  }
+
+  String _moodEmoji(int mood) {
+    switch (mood) {
+      case 1:
+        return '😞';
+      case 2:
+        return '😕';
+      case 3:
+        return '😐';
+      case 4:
+        return '🙂';
+      case 5:
+        return '😄';
+      default:
+        return '';
+    }
+  }
+
+  String _buildHeader(DateTime now) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    final t = '${two(now.hour)}:${two(now.minute)}';
+    final emoji = _mood == null ? '' : ' ${_moodEmoji(_mood!)}';
+    return '— $t$emoji';
+  }
+
+  String _ensureTrailingSessionHeader(String text, DateTime now) {
+    final lines = text.split('\n');
+    for (int i = lines.length - 1; i >= 0; i--) {
+      final l = lines[i].trim();
+      if (l.isEmpty) continue;
+      if (_isTimeHeaderLine(l)) return text;
+      break;
+    }
+
+    final header = _buildHeader(now);
+    final trimmed = text.trimRight();
+    if (trimmed.isEmpty) return '$header\n';
+    return '$trimmed\n\n$header\n';
+  }
+
+  String _syncTrailingHeaderMood(String text) {
+    // If the last non-empty line is a header, rewrite it with the current mood.
+    final normalized = text.replaceAll('\r\n', '\n');
+    final lines = normalized.split('\n');
+    int lastIdx = -1;
+    for (int i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim().isEmpty) continue;
+      lastIdx = i;
+      break;
+    }
+    if (lastIdx == -1) return text;
+
+    if (!_isTimeHeaderLine(lines[lastIdx])) return text;
+
+    // Preserve time if present, only swap emoji part.
+    final m = RegExp(r'^—\s*(\d{2}:\d{2})(?:\s+\S+)?$').firstMatch(lines[lastIdx].trim());
+    if (m == null) return text;
+
+    final time = m.group(1)!;
+    final emoji = _mood == null ? '' : ' ${_moodEmoji(_mood!)}';
+    lines[lastIdx] = '— $time$emoji';
+
+    return lines.join('\n');
+  }
+
+  void _moveCursorToEnd() {
+    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+  }
+
   @override
   void initState() {
     super.initState();
 
     final box = Hive.box<Entry>('entries');
     final entry = _findEntry(box, widget.entryId);
+    final now = DateTime.now();
     if (entry != null) {
-      _controller.text = entry.text;
       _mood = entry.mood;
+      final next = _ensureTrailingSessionHeader(entry.text, now);
+      _controller.text = next;
+      _moveCursorToEnd();
+    } else {
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _moveCursorToEnd();
     }
   }
 
@@ -72,7 +156,7 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                             final updated = Entry(
                               id: entry.id,
                               date: entry.date,
-                              text: _controller.text,
+                              text: _controller.text.trimRight(),
                               mood: _mood,
                               createdAt: entry.createdAt,
                             );
@@ -136,7 +220,14 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                             const SizedBox(height: 10),
                             _MoodPicker(
                               selected: _mood,
-                              onSelect: (v) => setState(() => _mood = v),
+                              onSelect: (v) {
+                                setState(() => _mood = v);
+                                final synced = _syncTrailingHeaderMood(_controller.text);
+                                if (synced != _controller.text) {
+                                  _controller.text = synced;
+                                  _moveCursorToEnd();
+                                }
+                              },
                             ),
 
                             const SizedBox(height: 18),
@@ -191,7 +282,7 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
                                       final updated = Entry(
                                         id: entry.id,
                                         date: entry.date,
-                                        text: _controller.text,
+                                        text: _controller.text.trimRight(),
                                         mood: _mood,
                                         createdAt: entry.createdAt,
                                       );
@@ -231,23 +322,6 @@ class _EditEntryScreenState extends State<EditEntryScreen> {
   static String _formatDate(DateTime d) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${d.year}.${two(d.month)}.${two(d.day)}';
-  }
-
-  static String _moodEmoji(int mood) {
-    switch (mood) {
-      case 1:
-        return '😞';
-      case 2:
-        return '😕';
-      case 3:
-        return '😐';
-      case 4:
-        return '🙂';
-      case 5:
-        return '😄';
-      default:
-        return '';
-    }
   }
 }
 
