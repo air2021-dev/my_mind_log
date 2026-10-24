@@ -1,9 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:my_mind_log/core/widgets/gradient_background.dart';
 import '../data/entry.dart';
 import 'entries_list_screen.dart';
+import 'settings_screen.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -13,12 +16,12 @@ import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'entry_detail_screen.dart';
 
-
 final _uuid = Uuid();
 
 enum _HomeMenuAction {
+  openHistory,
   showReflection,
-  resetWeeklyReflection,
+  openSettings,
 }
 
 class HomeScreen extends StatefulWidget {
@@ -33,6 +36,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _controller = TextEditingController();
   int? _mood; // 1 ~ 5 (optional)
+  String? _todayEntryId;
+  String _lastLoadedText = '';
+  late final Box<Entry> _entriesBox;
 
   final SpeechToText _stt = SpeechToText();
   bool _speechReady = false;
@@ -43,12 +49,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   DateTime? _listeningStartTime;
 
+  DateTime _dayKey(DateTime d) => DateTime(d.year, d.month, d.day);
+
   @override
   void initState(){
     super.initState();
+    _entriesBox = Hive.box<Entry>('entries');
+    _entriesBox.listenable().addListener(_onEntriesBoxChanged);
     // _initSpeech();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadTodayIntoEditor();
       _maybeShowWeeklyReflection();
     });
   }
@@ -75,41 +86,66 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose(){
+    _entriesBox.listenable().removeListener(_onEntriesBoxChanged);
     _stt.stop();
     _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _onTapSave() async{
-    final text = _controller.text.trim();
+  Future<void> _onTapSave() async {
+    final raw = _controller.text;
+    final text = raw.trim();
     if (text.isEmpty) return;
 
     final box = Hive.box<Entry>('entries');
     final now = DateTime.now();
+    final today = _dayKey(now);
 
-    // date는 "오늘"의 의미만 남기기 위해 시/분/초 제거
-    final today = DateTime(now.year, now.month, now.day);
+    final existing = _findTodayEntry(box);
+    final stored = raw.trimRight();
 
-    final entry = Entry(
-      id: _uuid.v4(),
-      date: today,
-      text: text,
-      mood: _mood,
-      createdAt: now,
-    );
+    if (existing == null) {
+      final entry = Entry(
+        id: _uuid.v4(),
+        date: today,
+        text: stored,
+        mood: _mood,
+        createdAt: now,
+      );
+      await box.put(entry.id, entry);
+      _todayEntryId = entry.id;
+      _lastLoadedText = _controller.text;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오늘 기록을 저장했어요.')),
+      );
+    } else {
+      final updated = Entry(
+        id: existing.id,
+        date: existing.date,
+        text: stored,
+        mood: _mood ?? existing.mood,
+        createdAt: existing.createdAt,
+      );
 
-    await box.put(entry.id, entry);
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('조용히 남겨두었어요.')),
-    );
-
-    _controller.clear();
-    setState(()=> _mood = null);
+      await box.put(updated.id, updated);
+      _lastLoadedText = _controller.text;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('오늘 기록을 저장했어요.')),
+      );
+    }
+    final next = _ensureTrailingSessionHeader(_controller.text, DateTime.now());
+    if (next != _controller.text) {
+      _controller.text = next;
+    }
+    _lastLoadedText = _controller.text;
+    _moveCursorToEnd();
   }
 
   Future<void> _toggleListening() async {
+    await _initSpeech();
+    
     if (!_speechReady){
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('이 기기에서 음성 인식을 사용할 수 없어요.')),
@@ -128,11 +164,13 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // 마이크 권한 요청
+    // 권한 요청 (iOS는 speech 권한도 필요)
     final mic = await Permission.microphone.request();
-    if(!mic.isGranted) {
+    final speech = await Permission.speech.request();
+
+    if (!mic.isGranted || !speech.isGranted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('마이크 권한이 필요해요.')),
+        const SnackBar(content: Text('음성 입력을 위해 마이크/음성 인식 권한이 필요해요.')),
       );
       return;
     }
@@ -170,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final base = _voiceBaseText;
 
     // 베이스 텍스트가 비어있지 않으면 ㅎ나 칸 띄워서 자연스럽게 붙이기
-    final needsSpace = base.isNotEmpty && !base.endsWith(RegExp(r'\s').toString());
+    final needsSpace = base.isNotEmpty && !RegExp(r'\s$').hasMatch(base);
     
     final combined = words.isEmpty ? base : (needsSpace ? '$base $words' : '$base$words');
 
@@ -188,108 +226,140 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final canSave = _controller.text.trim().isNotEmpty;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('오늘의 마음'),
-        actions: [
-          IconButton(
-            tooltip: '되돌아보기',
-            onPressed: () => _showReflection(manual: true),
-            icon: const Icon(Icons.history_rounded),
-          ),
-          PopupMenuButton<_HomeMenuAction> (
-            onSelected: (action) {
-              switch( action) {
-                case _HomeMenuAction.resetWeeklyReflection:
-                  _showReflection(manual: false);
-                break;
-                case _HomeMenuAction.showReflection:
-                  _showReflection(manual: true);
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: _HomeMenuAction.resetWeeklyReflection,
-                child: Text('주간 회고 초기화'),
-              ),
-              PopupMenuItem(
-                value: _HomeMenuAction.showReflection,
-                child: Text('주간 회고 보기'),
+    return Stack(
+      children: [
+        const GradientBackground(),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBodyBehindAppBar: true,
+          appBar: AppBar(
+            title: const Text('내 마음 기록'),
+            actions: [
+              PopupMenuButton<_HomeMenuAction>(
+                onSelected: (action) async {
+                  switch (action) {
+                    case _HomeMenuAction.openHistory:
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const EntriesListScreen()),
+                      );
+                      if (!mounted) return;
+                      _refreshTrailingHeaderTime();
+                      break;
+                    case _HomeMenuAction.showReflection:
+                      await _showReflection(manual: true);
+                      break;
+                    case _HomeMenuAction.openSettings:
+                      if (!mounted) return;
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => SettingsScreen(
+                            onResetWeeklyReflection: _resetWeeklyReflection,
+                          ),
+                        ),
+                      );
+                      if (!mounted) return;
+                      _refreshTrailingHeaderTime();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _HomeMenuAction.openHistory,
+                    child: Text('기록 목록'),
+                  ),
+                  PopupMenuItem(
+                    value: _HomeMenuAction.showReflection,
+                    child: Text('되돌아보기'),
+                  ),
+                  PopupMenuDivider(),
+                  PopupMenuItem(
+                    value: _HomeMenuAction.openSettings,
+                    child: Text('설정'),
+                  ),
+                ],
               ),
             ],
           ),
-          IconButton(
-            tooltip: '기록 목록',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const EntriesListScreen()),
-              );
-            },
-            icon: const Icon(Icons.list_alt_rounded),
-          ),
-          IconButton(
-            tooltip: _isListening ? '음성 입력 중지' : '음성 입력',
-            onPressed: _toggleListening,
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Icon( 
-                _isListening 
-                  ? Icons.mic 
-                  : Icons.mic_none_rounded,
-                key: ValueKey(_isListening),
-              ),
-            )
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _GentleMessageCard(
-              title: '오늘 기록하지 않아도 괜찮아요',
-              body: '지금 떠오르는 한 문장만 남겨도 충분해요.',
-            ),
-            const SizedBox(height: 16),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 64, 16, 16),
+              children: [
+                const _GentleMessageCard(
+                  title: '오늘 기록하지 않아도 괜찮아요',
+                  body: '지금 떠오르는 한 문장만 남겨도 충분해요.\n(시간 구분선은 자동으로 붙어요)',
+                  icon: Icons.auto_awesome_rounded,
+                ),
+                const SizedBox(height: 16),
 
-            const Text('기분 (선택)', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            _MoodRow(
-              selected: _mood,
-              onSelect: (value) => setState(()=> _mood = value),
-            ),
-            const SizedBox(height: 16),
+                const Text('오늘 기분', style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 10),
+                _MoodRow(
+                  selected: _mood,
+                  onSelect: (value) => setState(() => _mood = value),
+                ),
+                const SizedBox(height: 16),
 
-            const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _controller,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
-              ),
-              onChanged: (_) => setState((){}),
-            ),
-            const SizedBox(height: 16),
+                const Text('오늘의 마음 (자유롭게)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      // 아주 옅은 톤만 깔아서 배경과 섞이게 (바깥 네모 느낌 최소화)
+                      color: const Color(0xFFFFF3E6).withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        // negative spread로 그림자가 가장자리 안쪽으로 모이게 해서 "눌림" 느낌을 흉내
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.40),
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(-6, -6),
+                        ),
+                        BoxShadow(
+                          color: const Color(0xFF000000).withValues(alpha: 0.12),
+                          blurRadius: 18,
+                          spreadRadius: -10,
+                          offset: const Offset(6, 6),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: TextField(
+                        controller: _controller,
+                        maxLines: 8,
+                        decoration: const InputDecoration(
+                          hintText: '떠오르는 생각을 그대로 적어도 좋아요.',
+                          filled: false,
+                          border: InputBorder.none,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
-            if (_isListening) ...[
-              const SizedBox(height:12),
-              _ListeningBanner(
-                startedAt: _listeningStartTime,
-                onStop: _toggleListening,
-              ),
-              const SizedBox(height: 12),
+                if (_isListening) ...[
+                  const SizedBox(height:12),
+                  _ListeningBanner(
+                    startedAt: _listeningStartTime,
+                    onStop: _toggleListening,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                FilledButton.icon(
+                  onPressed: canSave ? _onTapSave : null,
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text('조용히 남기기'),
+                ),
             ],
-
-            ElevatedButton.icon(
-              onPressed: canSave ? _onTapSave: null,
-              icon: const Icon(Icons.check_rounded),
-              label: const Text('조용히 남기기'),
-            ),
-          ],
+          ),
         ),
-      ),
+        ),
+      ],
     );
   }
 
@@ -313,74 +383,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await _showReflectionDialog(picked, isAuto: true);
 
-    // final box = Hive.box<Entry>('entries');
-
-    // final today = DateTime(now.year, now.month, now.day);
-
-    // // "과거 기록"만 (오늘 기록은 제외)
-    // final pastEntries = box.values.where((e) => e.date.isBefore(today)).toList();
-
-    // if (pastEntries.isEmpty) return;
-
-    // final picked = pastEntries[Random().nextInt(pastEntries.length)];
-
-    // // 모달을 띄우는 순간, 이번 주 표시 완료로 처리 (재촉/반복 방지)
-    // await prefs.setString(_prefsKeyWeeklyReflection, weekKey);
-
-    // if (!mounted) return;
-
-    // await showDialog<void> (
-    //   context: context,
-    //   barrierDismissible: true,
-    //   builder: (ctx) {
-    //     final moodEmoji = picked.mood == null ? '' : _moodEmoji(picked.mood!);
-    //     final dateText = _formatDate(picked.date);
-
-    //     return AlertDialog(
-    //       title: const Text("이번주, 다시 만난 기록"),
-    //       content: ConstrainedBox(
-    //         constraints: const BoxConstraints(maxHeight: 320),
-    //         child: SingleChildScrollView(
-    //           child: Column(
-    //             crossAxisAlignment: CrossAxisAlignment.start,
-    //             children: [
-    //               Text(
-    //                 '$dateText ${moodEmoji.isEmpty ? '' : moodEmoji}',
-    //                 style: const TextStyle(fontWeight: FontWeight.w700),
-    //               ),
-    //               const SizedBox(height: 10),
-    //               Text(
-    //                 picked.text,
-    //               ),
-    //               const SizedBox(height:12),
-    //               Text(
-    //                 '원하면, 그냥 닫아도 괜찮아요.',
-    //                 style: TextStyle(color: Theme.of(ctx).hintColor),
-    //               ),                  
-    //             ],
-    //           ),
-    //         ),
-    //       ),
-    //       actions: [
-    //         TextButton(
-    //           onPressed: () => Navigator.pop(ctx),
-    //           child: const Text('조용히 닫기'),
-    //         ),
-    //         FilledButton (
-    //           onPressed: () {
-    //             Navigator.pop(ctx);
-    //             Navigator.of(context).push(
-    //               MaterialPageRoute(
-    //                 builder: (_) => EntryDetailScreen(entryId: picked.id),
-    //               ),
-    //             );
-    //           },
-    //           child: const Text('전체 보기'),
-    //         ),
-    //       ],
-    //     );
-    //   },
-    // );
   }
 
   // 수동: 언제든 여러 번 볼 수 있게.
@@ -404,6 +406,164 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Entry? _findTodayEntry(Box<Entry> box){
+    final today = _dayKey(DateTime.now());
+    try{
+      return box.values.firstWhere((e) => _dayKey(e.date) == today);
+    } catch (_){
+      return null;
+    }
+  }
+
+  String _appendWithTimeStamp(String oldText, String newText, DateTime now) {
+    final t = '${_two(now.hour)}:${_two(now.minute)}';
+    final header = '\n\n— $t\n';
+
+    final o = oldText.trimRight();
+    final n = newText.trim();
+    
+    if (o.isEmpty) return n;
+    if (n.isEmpty) return o;
+    return o + header + n;
+  }
+
+  bool _isTimeHeaderLine(String line) {
+    final l = line.trim();
+    // Accept:
+    //  — 09:05
+    //  — 09:05 🙂
+    // Allow extra spaces.
+    return RegExp(r'^—\s*\d{2}:\d{2}(\s+\S+)?$').hasMatch(l);
+  }
+
+  String _buildHeader(DateTime now) {
+    final t = '${_two(now.hour)}:${_two(now.minute)}';
+    final emoji = _mood == null ? '' : ' ${_moodEmoji(_mood!)}';
+    return '— $t$emoji';
+  }
+
+  String _ensureTrailingSessionHeader(String text, DateTime now) {
+    final lines = text.split('\n');
+    // Find last non-empty line
+    for (int i = lines.length - 1; i >= 0; i--) {
+      final l = lines[i].trim();
+      if (l.isEmpty) continue;
+      if (_isTimeHeaderLine(l)) return text;
+      break;
+    }
+
+    final header = _buildHeader(now);
+
+    final trimmed = text.trimRight();
+    if (trimmed.isEmpty) {
+      return '$header\n';
+    }
+    // Ensure a blank line before the header for readability.
+    return '$trimmed\n\n$header\n';
+  }
+  
+  void _refreshTrailingHeaderTime() {
+    final now = DateTime.now();
+    final text = _controller.text;
+    final lines = text.split('\n');
+
+    // 마지막 non-empty line 찾기
+    int lastIdx = -1;
+    for (int i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim().isEmpty) continue;
+      lastIdx = i;
+      break;
+    }
+
+    final header = _buildHeader(now);
+
+    if (lastIdx == -1) {
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    if (_isTimeHeaderLine(lines[lastIdx])) {
+      // 마지막 줄이 헤더면 현재 시간으로 교체
+      lines[lastIdx] = header;
+      final next = lines.join('\n');
+      if (next != _controller.text) _controller.text = next;
+
+      _lastLoadedText = _controller.text;
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // 마지막 줄이 헤더가 아니면 헤더를 보장
+    final next = _ensureTrailingSessionHeader(_controller.text, now);
+    if (next != _controller.text) _controller.text = next;
+
+    _lastLoadedText = _controller.text;
+    _moveCursorToEnd();
+    if (mounted) setState(() {});
+  }
+  void _moveCursorToEnd() {
+    _controller.selection = TextSelection.collapsed(offset: _controller.text.length);
+  }
+
+  Future<void> _loadTodayIntoEditor() async {
+    final box = Hive.box<Entry>('entries');
+    final existing = _findTodayEntry(box);
+    final now = DateTime.now();
+
+    if (existing == null) {
+      _todayEntryId = null;
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
+      _moveCursorToEnd();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    _todayEntryId = existing.id;
+    _mood = existing.mood;
+    final next = _ensureTrailingSessionHeader(existing.text, now);
+    _controller.text = next;
+    _lastLoadedText = next;
+    _moveCursorToEnd();
+
+    if (mounted) setState(() {});
+  }
+
+  void _onEntriesBoxChanged() {
+    // If the user has typed since last load, don't overwrite their in-progress edits.
+    if (_controller.text != _lastLoadedText) return;
+
+    final existing = _findTodayEntry(_entriesBox);
+    final now = DateTime.now();
+
+    if (existing == null) {
+      _todayEntryId = null;
+      final next = _ensureTrailingSessionHeader('', now);
+      _controller.text = next;
+      _lastLoadedText = next;
+      _moveCursorToEnd();
+      if (mounted) setState(() => _mood = null);
+      return;
+    }
+
+    _todayEntryId = existing.id;
+    _mood = existing.mood;
+    final next = _ensureTrailingSessionHeader(existing.text, now);
+
+    if (_controller.text == next) return;
+
+    _controller.text = next;
+    _lastLoadedText = next;
+    _moveCursorToEnd();
+
+    if (mounted) setState(() {});
+  }
   // onlyPast=true이면 오늘 제외(과거만)
   Entry? _pickReflectionEntry({required bool onlyPast}) {
     final box = Hive.box<Entry>('entries');
@@ -479,6 +639,11 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        backgroundColor: const Color(0xFFFFF8F1).withValues(alpha: 0.96),
+        surfaceTintColor: Colors.transparent,
+        elevation: 2,
+        shadowColor: const Color(0xFF000000).withValues(alpha: 0.08),
         title: Text(title),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 340),
@@ -491,7 +656,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
-                Text(picked.text),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3E6).withValues(alpha: 0.70),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF000000).withValues(alpha: 0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    picked.text,
+                    style: const TextStyle(height: 1.45),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   subtitle,
@@ -517,7 +699,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-    )  ;
+    );
   }
   
   Future<void> _resetWeeklyReflection() async {
@@ -556,27 +738,53 @@ class _HomeScreenState extends State<HomeScreen> {
 class _GentleMessageCard extends StatelessWidget {
   final String title;
   final String body;
+  final IconData icon;
 
   const _GentleMessageCard({
     required this.title,
     required this.body,
+    required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(body),
-        ],
+    return Card(
+      color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
+      elevation: 2,
+      shadowColor: const Color(0xFF000000).withValues(alpha: 0.06),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.92)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    body,
+                    style: const TextStyle(height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -601,31 +809,62 @@ class _MoodRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: _moods.entries.map((e) {
         final isSelected = selected == e.key;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () => onSelect(e.key),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    width: isSelected ? 2 : 1,
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).dividerColor,
-                  ),
+
+        // Subtle neumorphic style tuned for this warm theme:
+        // - Idle: a small, tight shadow to the bottom-right (not too spread).
+        // - Selected: simulate an inset/pressed feel using two tight shadows with negative spread.
+        final shadows = isSelected
+            ? <BoxShadow>[
+                // highlight on top-left (inset illusion)
+                BoxShadow(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  blurRadius: 8,
+                  spreadRadius: -6,
+                  offset: const Offset(-3, -3),
                 ),
-                alignment: Alignment.center,
-                child: Text(
-                  e.value,
-                  style: const TextStyle(fontSize: 22),
+                // shade on bottom-right (inset illusion)
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  spreadRadius: -6,
+                  offset: const Offset(3, 3),
                 ),
+              ]
+            : <BoxShadow>[
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.10),
+                  blurRadius: 10,
+                  spreadRadius: -2,
+                  offset: const Offset(4, 6),
+                ),
+              ];
+
+        return GestureDetector(
+          onTap: () => onSelect(e.key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: (isSelected
+                      ? const Color(0xFFFFEBDD) // a touch darker when pressed
+                      : const Color(0xFFFFF3E6))
+                  .withValues(alpha: 0.90),
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: shadows,
+            ),
+            child: Text(
+              e.value,
+              style: TextStyle(
+                fontSize: 22,
+                height: 1,
+                // slight scale emphasis when selected
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
           ),
@@ -652,8 +891,12 @@ class _ListeningBanner extends StatelessWidget {
       duration: const Duration(milliseconds: 250),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
+        color: const Color(0xFFFFF8F1).withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha((255 * 0.35).toInt())),
+        boxShadow: [
+          BoxShadow(color: const Color(0xFF000000).withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 6)),
+        ],
+        // border: Border.all(color: Theme.of(context).colorScheme.primary.withAlpha((255 * 0.35).toInt())),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -684,4 +927,3 @@ class _ListeningBanner extends StatelessWidget {
     );
   }
 }
-

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'app/app.dart';
 import 'features/entry/data/entry.dart';
@@ -9,6 +10,8 @@ Future<void> main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(EntryAdapter());
   await Hive.openBox<Entry>('entries');
+
+  await MobileAds.instance.initialize();
 
   runApp(const MyMindLogApp());
 }
